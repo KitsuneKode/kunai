@@ -42,11 +42,11 @@ function Section({
 }
 
 function Li({ children }: { readonly children: React.ReactNode }) {
-  return <li className="text-fd-muted-foreground text-sm leading-7">— {children}</li>;
+  return <li className="text-fd-muted-foreground text-sm leading-7">{children}</li>;
 }
 
 function Ul({ children }: { readonly children: React.ReactNode }) {
-  return <ul className="m-0 grid list-none gap-2 p-0">{children}</ul>;
+  return <ul className="m-0 grid list-disc gap-2 pl-5">{children}</ul>;
 }
 
 export default function PrivacyPage() {

@@ -1,6 +1,14 @@
 "use client";
 
-import { type ComponentType, type ReactNode, useEffect, useState } from "react";
+import { useHomeStage } from "@/components/home/home-stage-context";
+import {
+  type ComponentType,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import type { HomeCommandMetadata, HomeProviderMetadata } from "./types";
 
@@ -9,44 +17,68 @@ type SimulatorProps = {
   readonly paletteCommands: readonly HomeCommandMetadata[];
   readonly allCommands: readonly HomeCommandMetadata[];
   readonly cliVersion: string;
+  readonly publishedVersion?: string;
   readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
 };
 
 type HomeTerminalIslandProps = SimulatorProps & {
-  /**
-   * The server-rendered frame. Held on screen until the simulator chunk has
-   * actually arrived, so the hero never flashes an empty placeholder.
-   */
+  /** Server-rendered frame held until the interactive simulator chunk arrives. */
   readonly fallback: ReactNode;
 };
 
-/**
- * Loads the terminal simulator on the client only.
- *
- * This used `next/dynamic` with `ssr: false` and an `animate-pulse` box. That
- * put a blank rectangle in the initial HTML and, because nothing under an
- * `ssr: false` boundary is prerendered, kept every word the simulator prints
- * out of the server response. The import is still its own chunk; the
- * difference is that the frame beneath it is real, server-rendered content.
- */
+/** Loads the interactive terminal simulator on browser idle or first interaction. */
 export function HomeTerminalIsland({ fallback, ...simulatorProps }: HomeTerminalIslandProps) {
+  const { registerTerminalLoader } = useHomeStage();
   const [Simulator, setSimulator] = useState<ComponentType<SimulatorProps> | null>(null);
+  const requestedRef = useRef(false);
+  const mountedRef = useRef(true);
 
-  useEffect(() => {
-    let active = true;
-
+  const loadSimulator = useCallback(() => {
+    if (requestedRef.current) return;
+    requestedRef.current = true;
     const load = async () => {
-      const module = await import("./terminal-simulator");
-      if (active) setSimulator(() => module.TerminalSimulator);
+      try {
+        const module = await import("./terminal-simulator");
+        if (mountedRef.current) setSimulator(() => module.TerminalSimulator);
+      } catch {
+        // The static frame stays up; the next pointer, focus or hero command retries.
+        requestedRef.current = false;
+      }
     };
-
     void load();
-
-    return () => {
-      active = false;
-    };
   }, []);
 
-  if (!Simulator) return fallback;
+  useEffect(() => {
+    registerTerminalLoader(loadSimulator);
+    return () => registerTerminalLoader(null);
+  }, [loadSimulator, registerTerminalLoader]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(loadSimulator, { timeout: 1200 });
+      return () => {
+        mountedRef.current = false;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+    const timer = globalThis.setTimeout(loadSimulator, 800);
+    return () => {
+      mountedRef.current = false;
+      globalThis.clearTimeout(timer);
+    };
+  }, [loadSimulator]);
+
+  if (!Simulator) {
+    return (
+      <div
+        onPointerEnter={loadSimulator}
+        onPointerDown={loadSimulator}
+        onFocusCapture={loadSimulator}
+      >
+        {fallback}
+      </div>
+    );
+  }
   return <Simulator {...simulatorProps} />;
 }

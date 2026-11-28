@@ -88,6 +88,8 @@ export default async function Page({ params }: PageProps) {
   const canonicalUrl = docsCanonicalUrl(page.url);
   const lastModified = readLastModified(page.data);
   const isIndexHub = page.path === "index.mdx" || page.path.endsWith("/index.mdx");
+  // SAFETY: `status` is an optional frontmatter field our docs schema allows but
+  // Fumadocs' page type does not declare; an absent value reads as undefined.
   const pageStatus = (page.data as { status?: string }).status;
   const navGroup = navGroupForHref(page.url);
   const articleJsonLd = techArticleJsonLd({

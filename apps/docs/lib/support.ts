@@ -81,6 +81,30 @@ export const SPONSOR_FUNDS = [
   },
 ] as const;
 
+/** Concrete placements sponsors receive in return for backing Kunai. */
+export const SPONSOR_BENEFITS = [
+  {
+    title: "Homepage, docs & README dock",
+    body: "Your mark, one-line tagline, and direct link live in the Kunai sponsor dock on the landing page, /support, and the GitHub README.",
+  },
+  {
+    title: "Dedicated shoutout on X",
+    body: "A thank-you post from @KitsuneKode showcasing your product to terminal, CLI, and open-source builders.",
+  },
+  {
+    title: "Verifiable technical reach",
+    body: "Put your tool in front of daily Linux, macOS, and Windows terminal users — backed by the open public /analytics pulse.",
+  },
+] as const;
+
+/** Open visual slots displayed in the StickItUpX-style sponsor dock when founding spots are available. */
+export const FOUNDING_SPONSOR_SLOTS = [
+  { id: "slot-1", label: "Slot 01", hint: "Homepage + README dock" },
+  { id: "slot-2", label: "Slot 02", hint: "Docs & Support feature" },
+  { id: "slot-3", label: "Slot 03", hint: "Dedicated X shoutout" },
+  { id: "slot-4", label: "Slot 04", hint: "Founding backer badge" },
+] as const;
+
 /** What it does not buy. Said plainly because the absence is the promise. */
 export const SPONSOR_PROMISES = [
   "There is no paid tier. Every feature is free for everyone.",

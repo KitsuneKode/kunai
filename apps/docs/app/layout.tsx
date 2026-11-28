@@ -2,10 +2,9 @@
 import "./global.css";
 import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
 import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
-import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
+import { KunaiFoxRoamerIsland } from "@/components/brand/kunai-fox-roamer-island";
 import { NavCompact } from "@/components/layout/nav-compact";
 import { SiteFooter } from "@/components/layout/site-footer";
-import { MotionProvider } from "@/components/providers/motion-provider";
 import { LazySearchDialog } from "@/components/search/lazy-search-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
@@ -34,7 +33,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
-  themeColor: "#100b0f",
+  themeColor: "#0b0b0a",
   colorScheme: "dark",
 };
 
@@ -60,9 +59,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             enableSystem: false,
           }}
         >
-          <MotionProvider>
-            <TooltipProvider>{children}</TooltipProvider>
-          </MotionProvider>
+          <TooltipProvider>{children}</TooltipProvider>
           {/* Site-wide footer — a direct DOM child of body (the providers
               render no element), so `mt-auto` pins it to the fold on short
               pages and it sits after the page chrome on every route. */}
@@ -81,7 +78,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             Living in the root layout also means she survives route changes
             rather than remounting — she keeps walking while you navigate. */}
         <NavCompact />
-        <KunaiFoxRoamer />
+        <KunaiFoxRoamerIsland />
         <PrivacyAnalytics />
         <PrivacySpeedInsights />
       </body>

@@ -64,7 +64,8 @@
   height: var(--timeline-dot);
   border-radius: 9999px;
   background: var(--kunai-accent);
-  box-shadow: 0 0 0 4px color-mix(in oklab, var(--kunai-accent) 16%, transparent);
+  box-shadow: 0 0 0 4px
+    var(--home-hair-strong, color-mix(in oklab, var(--kunai-accent) 16%, transparent));
 }
 
 .kunai-timeline__fox {
@@ -110,8 +111,17 @@
   transform: translateX(-50%);
 }
 
+.kunai-timeline__step h3 {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 1.25rem;
+  font-weight: var(--kunai-weight-medium);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--home-text-1, var(--color-fd-foreground));
+}
+
 .kunai-timeline__step p {
-  color: var(--color-fd-muted-foreground);
+  color: var(--home-text-3, var(--color-fd-muted-foreground));
   text-wrap: pretty;
 }
 

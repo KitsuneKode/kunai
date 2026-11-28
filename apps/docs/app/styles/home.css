@@ -1,143 +1,1103 @@
+/* ── Kunai Homepage — Sumi & Sakura Editorial System ──────────────────────── */
+
+html:has(.kunai-home) body {
+  background-color: #0b0b0a;
+}
+
+.kunai-home,
+.kunai-drawer-stage,
+.kunai-drawer-scrim {
+  /* Sumi warm-neutral ink-stone scale (OKLCH hue ~95, chroma <= 0.005) */
+  --home-well: #060605;
+  --home-ground: #0b0b0a;
+  --home-band: #0e0e0d;
+  --home-raise-1: #131311;
+  --home-raise-2: #1b1b19;
+  --home-raise-3: #252522;
+  --home-raise-4: #302f2c;
+
+  /* Wide ivory-to-stone contrast ramp (17.8 -> 11.8 -> 7.7 -> 5.5 on ground) */
+  --home-text-1: #f5f3ee;
+  --home-text-2: #cbc8c0;
+  --home-text-3: #a5a29a;
+  --home-text-4: #8a877f;
+
+  --home-hair: rgb(255 250 240 / 0.07);
+  --home-hair-strong: rgb(255 250 240 / 0.12);
+  --home-specular: inset 0 1px 0 rgb(255 255 255 / 0.07);
+  --home-line-control: #6b6861;
+
+  /* Official @kunai/design lane marks — clean hue separation on warm carbon */
+  --home-lane-anime: #d885f1;
+  --home-lane-series: #4ad0cf;
+  --home-lane-movie: #ebc95c;
+  --home-lane-yt: #5fb6ff;
+  --home-lane-kunai: #ff8fb0;
+  --lane: var(--home-lane-anime);
+  --home-lane-fill: color-mix(in oklab, var(--lane) 12%, transparent);
+  --home-lane-edge: color-mix(in oklab, var(--lane) 38%, transparent);
+
+  /* Raised surface elevation — crisp hairline ring + top specular + deep drop */
+  --home-float:
+    inset 0 0 0 1px var(--home-hair-strong), var(--home-specular), 0 4px 12px -4px rgb(0 0 0 / 0.5),
+    0 18px 40px -12px rgb(0 0 0 / 0.78);
+  --home-float-hi: var(--home-float), 0 36px 76px -22px rgb(0 0 0 / 0.82);
+  --home-radius-row: 12px;
+  --home-radius-card: 18px;
+  --home-radius-pill: 999px;
+
+  /* Scoped display weight: 400 keeps Cormorant hairlines razor-sharp on carbon */
+  --kunai-weight-display: 400;
+}
+
 .kunai-home {
   isolation: isolate;
-  background:
-    radial-gradient(circle at center, transparent 40%, var(--kunai-bg) 98%),
-    linear-gradient(
-      90deg,
-      color-mix(in oklab, var(--kunai-line) 24%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--kunai-line) 20%, transparent) 1px,
-      transparent 1px
-    );
-  background-size: 6.5rem 6.5rem;
-  background-position: center top;
+  background-color: var(--home-ground);
+  color: var(--home-text-1);
+  caret-color: var(--home-lane-kunai);
 }
+
+.kunai-home ::selection {
+  background: color-mix(in oklab, var(--home-lane-kunai) 26%, var(--home-raise-3));
+  color: var(--home-text-1);
+}
+
+/* Alternating subtle tonal bands for architectural section separation */
+.kunai-band-surface {
+  background: var(--home-band);
+  border-top: 1px solid var(--home-hair);
+  border-bottom: 1px solid var(--home-hair);
+  padding-block: clamp(4.5rem, 8vw, 6.5rem);
+  margin-top: clamp(5rem, 9vw, 8rem);
+}
+
+/* Bookend lights — subtle warm ivory/sakura whisper at top and final CTA only */
+.kunai-home-top-light {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 30rem;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    56rem 24rem at 50% -6rem,
+    color-mix(in oklab, var(--home-lane-kunai) 6%, transparent),
+    transparent 70%
+  );
+}
+
+.kunai-home-bottom-light {
+  position: absolute;
+  inset-inline: 0;
+  bottom: -4rem;
+  height: 28rem;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    52rem 24rem at 50% 100%,
+    color-mix(in oklab, var(--home-lane-kunai) 7%, transparent),
+    transparent 72%
+  );
+}
+
+/* Column containers */
+.kunai-home-col {
+  position: relative;
+  z-index: 1;
+  margin-inline: auto;
+  width: min(1120px, calc(100vw - 32px));
+}
+
+.kunai-home-col--wide {
+  position: relative;
+  z-index: 1;
+  margin-inline: auto;
+  width: min(1240px, calc(100vw - 32px));
+}
+
+.kunai-home-section {
+  margin-top: clamp(5.25rem, 9.5vw, 8.5rem);
+}
+
+.kunai-band-surface .kunai-home-section {
+  margin-top: 0;
+}
+
+.kunai-section-head {
+  margin-bottom: 2.25rem;
+}
+
+.kunai-home-highlights .kunai-section-head {
+  margin-bottom: 0.75rem;
+}
+
+/* Cursor-following spotlight border utility (applied on Bento, Workshop, Preview Card) */
+.kunai-spotlight {
+  position: relative;
+}
+
+.kunai-spotlight::before,
+.kunai-spotlight::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms var(--ease-out);
+}
+
+.kunai-spotlight::before {
+  padding: 1px;
+  background: radial-gradient(
+    220px circle at var(--mx, 50%) var(--my, 50%),
+    rgb(255 250 240 / 0.24),
+    transparent 65%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+.kunai-spotlight::after {
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, 50%),
+    rgb(255 250 240 / 0.045),
+    transparent 68%
+  );
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-spotlight[data-spot="true"]::before,
+  .kunai-spotlight[data-spot="true"]::after {
+    opacity: 1;
+  }
+}
+
+/* ── 01 · Hero & Fanned Scene Ribbon ────────────────────────────────────── */
 
 .kunai-home-hero {
+  padding-top: clamp(2.25rem, 4.5vw, 3.25rem);
+}
+
+.kunai-scene-ribbon {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-block-size: 184px;
+  margin-bottom: clamp(2rem, 4vw, 3rem);
 }
 
-.kunai-home-install,
-.kunai-home-steps,
-.kunai-home-highlights,
-.kunai-home-providers,
-.kunai-home-start,
-.kunai-home-open,
-.kunai-home-workshop,
-.kunai-home-final {
-  margin-top: clamp(2.5rem, 5vw, 4rem);
+/* A custom property's var() resolves where it is declared, so an element that
+   sets its own --lane must re-derive the lane mixes or it inherits the hero's. */
+[style*="--lane"] {
+  --home-lane-fill: color-mix(in oklab, var(--lane) 12%, transparent);
+  --home-lane-edge: color-mix(in oklab, var(--lane) 38%, transparent);
 }
 
-.kunai-home-providers .kunai-surface-shell {
-  margin-top: 1.5rem;
-}
-
-.kunai-reveal {
-  animation: kunai-rise 700ms var(--kunai-ease-out) both;
-}
-
-@keyframes kunai-rise {
-  from {
-    opacity: 0;
-    transform: translateY(20px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes kunai-fade-in {
-  from {
-    opacity: 0;
-    filter: blur(4px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-  }
-}
-
-/* Terminal & Interactive Terminal Simulator */
-.kunai-terminal-stage {
+.kunai-scene-deck {
   position: relative;
-  border: 1px solid var(--kunai-line);
-  border-radius: 0.75rem;
-  background: linear-gradient(
-    145deg,
-    color-mix(in oklab, var(--kunai-surface) 92%, transparent),
-    color-mix(in oklab, var(--kunai-surface-strong) 84%, transparent)
-  );
-  padding: 0.85rem;
-  box-shadow: var(--kunai-card-shadow);
-  transition:
-    border-color 300ms var(--kunai-ease-out),
-    box-shadow 300ms var(--kunai-ease-out);
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 8px;
+  height: 128px;
+  width: 100%;
+  max-width: 860px;
+  padding-top: 0.75rem;
+  mask-image: linear-gradient(180deg, #000 0%, #000 74%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 74%, transparent 100%);
 }
 
-.kunai-terminal-stage.is-focused {
-  border-color: var(--kunai-accent);
+.kunai-scene-card {
+  position: relative;
+  width: 196px;
+  flex: 0 1 auto;
+  min-width: 0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--home-raise-2), var(--home-raise-1));
+  box-shadow: var(--home-float);
+  padding: 0.72rem 0.85rem 0.85rem;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  transition: box-shadow 180ms var(--ease-out);
+}
+
+.kunai-scene-card.is-active {
+  background: linear-gradient(180deg, var(--home-raise-3), var(--home-raise-1));
   box-shadow:
-    0 0 0 2px var(--kunai-accent-glow),
-    var(--kunai-card-shadow);
+    inset 0 0 0 1px var(--home-lane-edge),
+    var(--home-specular),
+    0 16px 40px -8px rgb(0 0 0 / 0.84);
 }
 
-.kunai-terminal-top,
-.kunai-terminal-body {
-  border: 1px solid var(--kunai-line);
-  background: color-mix(in oklab, var(--kunai-bg) 95%, transparent);
+.kunai-scene-card__bar {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 2px;
+  background: var(--lane);
+  opacity: 0.55;
 }
 
-.kunai-terminal-top {
+.kunai-scene-card.is-active .kunai-scene-card__bar {
+  opacity: 1;
+}
+
+.kunai-scene-card__top {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.kunai-scene-card__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--lane);
+  flex: none;
+}
+
+.kunai-scene-card__cmd {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, #000 84%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 84%, transparent 100%);
+}
+
+.kunai-scene-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.kunai-scene-card__line {
+  color: var(--home-text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, #000 82%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent 100%);
+}
+
+.kunai-scene-card__line--title {
+  color: var(--home-text-2);
+}
+
+.kunai-scene-card__line--accent {
+  color: var(--lane);
+}
+
+.kunai-scene-pill {
+  position: relative;
+  z-index: 12;
+  margin-top: -0.5rem;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  border-radius: var(--home-radius-pill);
+  background: color-mix(in oklab, var(--home-raise-2) 92%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--home-float);
+}
+
+.kunai-scene-pill__hint {
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 0.5rem 0.35rem;
+}
+
+.kunai-scene-pill__hint kbd,
+.kunai-inline-kbd {
+  border: 1px solid var(--home-hair-strong);
+  border-radius: 6px;
+  background: var(--home-raise-4);
+  padding: 0.1rem 0.42rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--home-text-2);
+}
+
+.kunai-scene-pill__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.78rem;
+  border-radius: var(--home-radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--home-text-3);
+  font-size: 0.75rem;
+  font-weight: var(--kunai-weight-medium);
+  cursor: pointer;
+  transition: color 150ms var(--ease-out);
+}
+
+.kunai-scene-pill__btn:has(:focus-visible) {
+  outline: 2px solid var(--home-lane-kunai);
+  outline-offset: 2px;
+}
+
+.kunai-scene-pill__btn.is-selected {
+  color: var(--home-text-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-scene-pill__btn:hover {
+    color: var(--home-text-1);
+  }
+}
+
+.kunai-scene-pill__indicator {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--home-radius-pill);
+  background: var(--home-raise-3);
+  box-shadow:
+    inset 0 0 0 1px var(--home-lane-edge),
+    var(--home-specular);
+}
+
+.kunai-scene-pill__dot,
+.kunai-lane-dot {
+  position: relative;
+  z-index: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--lane);
+  flex: none;
+}
+
+/* Hero editorial typography */
+.kunai-hero-h1 {
+  margin: 0;
+  max-width: 17ch;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(2.75rem, 6.2vw, 5.25rem);
+  line-height: 0.98;
+  font-weight: var(--kunai-weight-display);
+  letter-spacing: -0.035em;
+  color: var(--home-text-1);
+}
+
+.kunai-hero-lead {
+  margin-inline: auto;
+  max-width: 54ch;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--home-text-2);
+}
+
+/* Hero proof row */
+.kunai-proof-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.75rem;
+  justify-content: center;
+  gap: 0 1.4rem;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--home-text-4);
+}
+
+.kunai-proof-row li {
+  position: relative;
+  padding-block: 0.3rem;
+}
+
+.kunai-proof-row li + li::before {
+  content: "";
+  position: absolute;
+  left: -0.7rem;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.45;
+  transform: translateY(-50%);
+}
+
+.kunai-proof-row a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition:
+    color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-proof-row a:hover {
+    color: var(--home-text-1);
+    border-bottom-color: var(--home-hair-strong);
+  }
+}
+
+/* ── Install Dock (full-width balanced segmented control + recessed well) ── */
+
+.kunai-install-dock {
+  border-radius: 16px;
+  background: var(--home-raise-1);
+  box-shadow: var(--home-float);
+  padding: 0.5rem;
+  text-align: left;
+  transition: box-shadow 220ms var(--ease-out);
+}
+
+.kunai-install-dock.is-copied {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--kunai-ok) 48%, transparent),
+    var(--home-specular),
+    0 4px 12px -4px rgb(0 0 0 / 0.5),
+    0 18px 40px -12px rgb(0 0 0 / 0.78);
+}
+
+.kunai-install-dock__head {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  border-radius: 0.5rem;
-  padding: 0.65rem 0.85rem;
-  color: var(--color-fd-muted-foreground);
+  gap: 0.75rem;
+  padding: 0 0.2rem 0.5rem;
+}
+
+.kunai-install-dock__switch {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  max-width: 22rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 2px;
+  border-radius: var(--home-radius-pill);
+  background: var(--home-well);
+  box-shadow:
+    inset 0 1px 0 rgb(0 0 0 / 0.5),
+    inset 0 0 0 1px var(--home-hair);
+}
+
+.kunai-install-dock__thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: var(--home-radius-pill);
+  background: var(--home-raise-3);
+  box-shadow:
+    inset 0 0 0 1px var(--home-hair-strong),
+    var(--home-specular);
+  transition: transform 240ms var(--ease-out);
+}
+
+.kunai-install-dock__option {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.32rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: var(--kunai-weight-medium);
+  color: var(--home-text-3);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: color 150ms var(--ease-out);
+}
+
+.kunai-install-dock__option:has(:checked) {
+  color: var(--home-text-1);
+}
+
+.kunai-install-dock__option:has(:focus-visible) {
+  outline: 2px solid var(--home-lane-kunai);
+  outline-offset: 2px;
+  border-radius: var(--home-radius-pill);
+}
+
+.kunai-install-dock__meta {
+  border-radius: 6px;
+  background: var(--home-raise-3);
+  padding: 0.14rem 0.48rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-text-3);
+}
+
+.kunai-install-dock__well {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: 12px;
+  background: var(--home-well);
+  box-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 0.55),
+    inset 0 0 0 1px var(--home-hair);
+  padding: 0.55rem 0.6rem 0.55rem 0.85rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--home-text-1);
+}
+
+.kunai-install-dock__prompt {
+  color: var(--home-lane-kunai);
+  flex: none;
+  user-select: none;
+}
+
+.kunai-install-dock__cmd {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.kunai-install-dock__copy {
+  flex: none;
+}
+
+/* ── 02 · Full-width Ghostty/Tahoe Terminal Stage (Ember Dusk interior) ─── */
+
+.kunai-home-stage {
+  margin-top: clamp(2.25rem, 4.5vw, 3.5rem);
+}
+
+.kunai-home .kunai-hero-terminal-plane {
+  position: relative;
+  border: none;
+  border-radius: var(--home-radius-card);
+  background: #0d0a0d;
+  box-shadow: var(--home-float-hi);
+  overflow: hidden;
+}
+
+/* 1px luminous lane beam along top edge following active HeroSceneRibbon mode */
+.kunai-terminal-beam {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(90deg, transparent 8%, var(--lane) 50%, transparent 92%);
+  opacity: 0.85;
+  transition: background 240ms var(--ease-out);
+}
+
+.kunai-terminal-stage {
+  position: relative;
+  border-radius: var(--home-radius-card);
+  background: #0d0a0d;
+  padding: 0;
+  transition: box-shadow 200ms var(--ease-out);
+}
+
+.kunai-terminal-stage.is-focused {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--lane) 45%, transparent);
+}
+
+.kunai-terminal-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--home-raise-2);
+  border-bottom: 1px solid var(--home-hair);
+  padding: 0.7rem 1rem;
+  color: var(--home-text-4);
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: var(--kunai-text-caption);
-  font-weight: var(--kunai-weight-semibold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+}
+
+.kunai-window-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.kunai-window-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #3a3936;
+  transition: background-color 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-terminal-stage:hover .kunai-window-dot--close {
+    background: #ff5f57;
+  }
+  .kunai-terminal-stage:hover .kunai-window-dot--min {
+    background: #febc2e;
+  }
+  .kunai-terminal-stage:hover .kunai-window-dot--max {
+    background: #28c840;
+  }
+}
+
+.kunai-terminal-title {
+  color: var(--home-text-3);
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
 }
 
 .kunai-terminal-badges {
   display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.kunai-terminal-view-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 9999px;
+  border: 1px solid rgb(255 250 240 / 0.1);
+  background: #0b0b0a;
+}
+
+.kunai-terminal-view-btn {
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--home-text-4);
+  padding: 0.15rem 0.55rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-out),
+    color 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+.kunai-terminal-view-btn.is-active {
+  background: #252522;
+  color: var(--home-text-1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-terminal-view-btn:active,
+  .kunai-kitty-tui__tab:active {
+    transform: scale(0.97);
+  }
+
+  .kunai-kitty-tui__row:active {
+    transform: scale(0.99);
+  }
+}
+
+/* ============================================================================
+   Kitty Graphics Protocol Split-Pane TUI Preview
+   ============================================================================ */
+
+.kunai-kitty-tui {
+  display: flex;
+  flex-direction: column;
+  background: #0d0a0d;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.kunai-kitty-tui__bar {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.75rem;
-  margin-inline-end: 0.15rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 1.1rem;
+  border-bottom: 1px solid rgb(255 250 240 / 0.07);
+}
+
+.kunai-kitty-tui__tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.kunai-kitty-tui__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 0.45rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--home-text-4);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-out),
+    color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-kitty-tui__tab:hover {
+    color: var(--home-text-2);
+  }
+}
+
+.kunai-kitty-tui__tab.is-active {
+  background: rgb(255 250 240 / 0.06);
+  border-color: rgb(255 250 240 / 0.12);
+  color: var(--home-text-1);
+}
+
+.kunai-kitty-tui__tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+}
+
+.kunai-kitty-tui__tab[data-lane="anime"] .kunai-kitty-tui__tab-dot {
+  background: var(--home-lane-anime);
+}
+.kunai-kitty-tui__tab[data-lane="series"] .kunai-kitty-tui__tab-dot {
+  background: var(--home-lane-series);
+}
+.kunai-kitty-tui__tab[data-lane="movie"] .kunai-kitty-tui__tab-dot {
+  background: var(--home-lane-movie);
+}
+.kunai-kitty-tui__tab[data-lane="youtube"] .kunai-kitty-tui__tab-dot {
+  background: var(--home-lane-yt);
+}
+
+.kunai-kitty-tui__tab:focus-visible,
+.kunai-kitty-tui__row:focus-visible,
+.kunai-kitty-tui__play:focus-visible,
+.kunai-terminal-view-btn:focus-visible {
+  outline: 2px solid var(--home-lane-kunai);
+  outline-offset: 2px;
+}
+
+.kunai-kitty-tui__proto {
+  font-size: 0.6875rem;
+  color: var(--home-text-4);
+}
+
+.kunai-kitty-tui__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 19.5rem;
+}
+
+@media (min-width: 780px) {
+  .kunai-kitty-tui__grid {
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 1.18fr);
+  }
+}
+
+.kunai-kitty-tui__list {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  gap: 0.3rem;
+  border-bottom: 1px solid rgb(255 250 240 / 0.07);
+}
+
+@media (min-width: 780px) {
+  .kunai-kitty-tui__list {
+    border-bottom: 0;
+    border-right: 1px solid rgb(255 250 240 / 0.07);
+  }
+}
+
+.kunai-kitty-tui__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-kitty-tui__row:hover {
+    background: rgb(255 250 240 / 0.03);
+  }
+}
+
+.kunai-kitty-tui__row.is-selected {
+  background: rgb(255 143 176 / 0.08);
+  border-color: rgb(255 143 176 / 0.24);
+}
+
+.kunai-kitty-tui__rail {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.kunai-kitty-tui__row.is-selected .kunai-kitty-tui__rail {
+  background: var(--kunai-accent);
+}
+
+.kunai-kitty-tui__row-title {
+  display: block;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--home-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kunai-kitty-tui__row-sub {
+  display: block;
+  margin-top: 0.12rem;
+  font-size: 0.72rem;
+  color: var(--home-text-4);
+}
+
+.kunai-kitty-tui__row-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  font-size: 0.7rem;
+  color: var(--home-text-4);
+  flex-shrink: 0;
+}
+
+.kunai-kitty-tui__row-rate {
+  color: var(--home-lane-movie);
+}
+
+.kunai-kitty-tui__status {
+  margin: auto 0 0;
+  padding: 0.55rem 0.75rem 0.15rem;
+  font-size: 0.7rem;
+  color: var(--home-text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kunai-kitty-tui__preview {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 1.1rem;
+  align-items: start;
+  padding: 1rem 1.15rem;
+}
+
+@media (max-width: 520px) {
+  .kunai-kitty-tui__preview {
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 0.85rem;
+  }
+}
+
+.kunai-kitty-poster {
+  width: 100%;
+  aspect-ratio: 180 / 248;
+  border-radius: 0.6rem;
+  overflow: clip;
+  border: 1px solid rgb(255 250 240 / 0.14);
+  box-shadow: 0 14px 32px -12px rgb(0 0 0 / 0.8);
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+
+@starting-style {
+  .kunai-kitty-poster {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kunai-kitty-poster {
+    transition: opacity 150ms ease;
+    transform: none;
+  }
+
+  @starting-style {
+    .kunai-kitty-poster {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}
+
+.kunai-kitty-tui__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.kunai-kitty-tui__preview-title {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.98rem;
+  font-weight: 500;
+  color: var(--home-text-1);
+  line-height: 1.25;
+}
+
+.kunai-kitty-tui__provider-chip {
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1px solid rgb(255 250 240 / 0.12);
+  background: #1b1b19;
+  padding: 0.14rem 0.55rem;
+  font-size: 0.68rem;
+  color: var(--home-text-3);
+}
+
+.kunai-kitty-tui__preview-spec {
+  font-size: 0.74rem;
+  color: var(--kunai-ok);
+}
+
+.kunai-kitty-tui__preview-desc {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--home-text-3);
+}
+
+.kunai-kitty-tui__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.kunai-kitty-tui__badge {
+  border-radius: 0.35rem;
+  border: 1px solid rgb(255 250 240 / 0.1);
+  background: #1b1b19;
+  padding: 0.14rem 0.45rem;
+  font-size: 0.68rem;
+  color: var(--home-text-2);
+}
+
+.kunai-kitty-tui__play {
+  margin-top: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 0.55rem;
+  background: #f5f3ee;
+  color: #0b0b0a;
+  padding: 0.42rem 0.85rem;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-kitty-tui__play:hover {
+    background: #ffffff;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-kitty-tui__play:active {
+    transform: scale(0.97);
+  }
+}
+
+.kunai-kitty-tui__kbd {
+  border-radius: 0.3rem;
+  background: rgb(11 11 10 / 0.12);
+  padding: 0.05rem 0.35rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.66rem;
+}
+
+.kunai-kitty-tui__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.55rem 1.1rem;
+  border-top: 1px solid rgb(255 250 240 / 0.07);
+  background: #131311;
+  font-size: 0.7rem;
+  color: var(--home-text-4);
+}
+
+.kunai-kitty-tui__footer kbd {
+  margin-right: 0.3rem;
+  border: 1px solid rgb(255 250 240 / 0.12);
+  border-radius: 0.25rem;
+  background: #1b1b19;
+  padding: 0.05rem 0.32rem;
+  color: var(--home-text-2);
 }
 
 .kunai-terminal-body {
-  margin-top: 0.6rem;
-  border-radius: 0.5rem;
-  padding: 1.25rem;
-  font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  padding: 1.25rem 1.4rem 1.1rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
-  line-height: 1.7;
-  min-height: 240px;
-  max-height: 380px;
+  line-height: 1.74;
+  min-height: 256px;
+  max-height: 360px;
   overflow-y: auto;
+  scrollbar-width: none;
   position: relative;
+  background: #0d0a0d;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 10%, #000 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 10%, #000 100%);
+}
+
+.kunai-terminal-body::-webkit-scrollbar {
+  display: none;
 }
 
 .kunai-log-line {
   display: block;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 
 .kunai-log-line--prompt {
   margin-top: 0.5rem;
   font-weight: var(--kunai-weight-semibold);
-  color: var(--kunai-accent);
+  color: var(--home-lane-kunai);
 }
 
 .kunai-log-line--ok {
@@ -149,41 +1109,40 @@
 }
 
 .kunai-log-line--play {
-  /* The hand-off to mpv is the `info` signal. A raw cyan here was a tenth hue the system
-     does not have. */
-  color: var(--kunai-info);
+  color: var(--home-lane-yt);
 }
 
 .kunai-log-line--query {
-  color: var(--kunai-accent);
+  color: var(--home-lane-series);
+}
+
+.kunai-log-line--mode {
+  color: var(--home-lane-anime);
 }
 
 .kunai-log-line--brand {
   font-weight: var(--kunai-weight-semibold);
-  color: var(--kunai-accent);
+  color: var(--home-lane-kunai);
 }
 
 .kunai-log-line--muted {
-  /* The full muted token, not a 72% mix of it: the mix measured 3.6:1 on the
-     terminal body, below the 4.5:1 body text needs. */
-  color: var(--color-fd-muted-foreground);
+  color: #beb1c0;
 }
 
 .kunai-terminal-input-row {
   position: relative;
-  margin-top: 0.75rem;
+  margin-top: 0.85rem;
   display: flex;
   align-items: center;
-  border-top: 1px solid var(--kunai-line);
-  padding-top: 0.5rem;
+  border-top: 1px solid rgb(255 250 240 / 0.08);
+  padding-top: 0.65rem;
 }
 
-/* Terminal interactive cursor */
 .kunai-cursor {
   display: inline-block;
   width: 7px;
   height: 15px;
-  background-color: var(--kunai-accent);
+  background-color: var(--home-lane-kunai);
   vertical-align: middle;
   margin-left: 2px;
   animation: kunai-blink 1s step-end infinite;
@@ -195,20 +1154,30 @@
     background-color: transparent;
   }
   50% {
-    background-color: var(--kunai-accent);
+    background-color: var(--home-lane-kunai);
   }
 }
 
-/* Command Palette Overlay */
+.kunai-terminal-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem 0.5rem;
+  border-top: 1px solid var(--home-hair);
+  background: var(--home-raise-1);
+  padding: 0.8rem 1rem;
+}
+
+/* Command Palette Overlay inside Terminal */
 .kunai-command-palette {
   position: absolute;
-  top: 4.5rem;
-  left: 1.5rem;
-  right: 1.5rem;
-  background: var(--kunai-surface-strong);
-  border: 1px solid var(--kunai-accent);
-  border-radius: 0.5rem;
-  box-shadow: 0 20px 40px color-mix(in oklab, black 40%, transparent);
+  top: 3.5rem;
+  left: 1.25rem;
+  right: 1.25rem;
+  background: var(--home-raise-2);
+  border-radius: 14px;
+  box-shadow: var(--home-float-hi);
   z-index: 10;
   overflow: hidden;
   transform-origin: top center;
@@ -218,28 +1187,28 @@
   display: flex;
   align-items: center;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--kunai-line);
-  background: color-mix(in oklab, var(--kunai-bg) 60%, transparent);
+  border-bottom: 1px solid var(--home-hair);
+  background: var(--home-well);
 }
 
 .palette-search-input {
   background: transparent;
   border: none;
-  color: var(--color-fd-foreground);
+  color: var(--home-text-1);
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   width: 100%;
 }
 
 .palette-search-input:focus-visible {
-  outline: 2px solid var(--kunai-accent);
+  outline: 2px solid var(--home-lane-kunai);
   outline-offset: 2px;
 }
 
 .palette-list {
   max-height: 220px;
   overflow-y: auto;
-  padding: 0.5rem;
+  padding: 0.45rem;
 }
 
 .palette-item {
@@ -247,276 +1216,627 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.6rem 0.8rem;
-  border-radius: 0.375rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 150ms var(--kunai-ease-out);
-  font-family: "JetBrains Mono", monospace;
+  transition: background-color 140ms var(--ease-out);
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.8rem;
 }
 
-.palette-item::before {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: inherit;
-}
-
-/* Selection moves with the arrow keys, so it must not animate or move anything:
-   a transform here ran on every keypress, and the old 3px border-left shifted the
-   text beside it. The marker is an inset shadow, which takes no space. */
 .palette-item.is-selected {
-  background: var(--kunai-surface);
-  box-shadow: inset 2px 0 0 var(--kunai-accent);
+  background: var(--home-raise-3);
+  box-shadow: inset 2px 0 0 var(--home-lane-kunai);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .palette-item:hover {
-    background: var(--kunai-surface);
-    box-shadow: inset 2px 0 0 var(--kunai-accent);
+    background: var(--home-raise-3);
+    box-shadow: inset 2px 0 0 var(--home-lane-kunai);
   }
-}
-
-.palette-item:active {
-  background: var(--kunai-surface-strong);
 }
 
 .palette-shortcut {
-  color: var(--color-fd-muted-foreground);
-  font-size: 0.72rem;
-  border: 1px solid var(--kunai-line);
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: var(--kunai-bg);
+  color: var(--home-text-3);
+  font-size: 0.75rem;
+  border: 1px solid var(--home-hair-strong);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--home-raise-4);
 }
 
-/* Sections & Grids */
-.kunai-band,
-.kunai-flow-section,
-.kunai-docs-section,
-.kunai-final {
-  border-top: 1px solid var(--kunai-line);
-  padding-block: clamp(3.5rem, 6vw, 4.5rem);
+/* ── 04 · Provider Directory (3px Headroom Scanner + Sieve + Hover Preview) */
+
+.kunai-provider-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--home-hair);
 }
 
-.kunai-band {
+@media (min-width: 768px) {
+  .kunai-provider-header {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+}
+
+.kunai-directory {
+  margin-top: 1.5rem;
+}
+
+/* Headroom proportional 3px lane bar */
+.kunai-scanner {
+  margin-bottom: 1.25rem;
+}
+
+.kunai-scanner__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.kunai-scanner__readout {
+  margin: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  color: var(--home-text-3);
+}
+
+.kunai-scanner__clear {
+  border: none;
+  background: transparent;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+  color: var(--home-text-4);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 140ms var(--ease-out);
+}
+
+.kunai-scanner__clear:hover {
+  color: var(--home-text-1);
+}
+
+.kunai-scanner__bar {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  height: 3px;
+  width: 100%;
+}
+
+.kunai-scanner__seg {
+  border: none;
+  padding: 0;
+  min-width: 24px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--lane) 78%, transparent);
+  cursor: pointer;
+  transition:
+    opacity 150ms var(--ease-out),
+    background-color 150ms var(--ease-out);
+}
+
+.kunai-scanner__seg:hover,
+.kunai-scanner__seg:focus-visible,
+.kunai-scanner__seg[aria-pressed="true"] {
+  background: var(--lane);
+}
+
+.kunai-scanner__seg:focus-visible {
+  outline: 2px solid var(--lane);
+  outline-offset: 2px;
+}
+
+.kunai-scanner__seg.is-dimmed {
+  opacity: 0.25;
+}
+
+.kunai-scanner__seg.is-dimmed:focus-visible {
+  opacity: 1;
+}
+
+/* Directory controls: pills + sieve input */
+.kunai-dir-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.kunai-dir-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border-radius: var(--home-radius-pill);
+  background: var(--home-well);
+  box-shadow:
+    inset 0 1px 0 rgb(0 0 0 / 0.5),
+    inset 0 0 0 1px var(--home-hair);
+}
+
+.kunai-dir-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.36rem 0.76rem;
+  border: none;
+  border-radius: var(--home-radius-pill);
+  background: transparent;
+  color: var(--home-text-3);
+  font-size: 0.75rem;
+  font-weight: var(--kunai-weight-medium);
+  cursor: pointer;
+  transition:
+    color 150ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-dir-pill:active {
+    transform: scale(0.97);
+  }
+}
+
+.kunai-dir-pill.is-active,
+.kunai-dir-pill:hover {
+  color: var(--home-text-1);
+}
+
+.kunai-dir-pill__bg {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--home-radius-pill);
+  background: var(--home-raise-3);
+  box-shadow:
+    inset 0 0 0 1px var(--home-hair-strong),
+    var(--home-specular);
+}
+
+.kunai-dir-pill__count {
+  color: var(--home-text-4);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.kunai-sieve-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: min(100%, 260px);
+  border-radius: var(--home-radius-pill);
+  border: 1px solid var(--home-line-control);
+  background: var(--home-well);
+  padding: 0.38rem 0.75rem;
+  transition: border-color 150ms var(--ease-out);
+}
+
+.kunai-sieve-box:focus-within {
+  border-color: var(--home-lane-kunai);
+}
+
+.kunai-sieve-box__icon {
+  color: var(--home-text-4);
+}
+
+.kunai-sieve-box__input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--home-text-1);
+  font-size: 0.8125rem;
+  outline: 2px solid transparent;
+}
+
+.kunai-sieve-box__input::placeholder {
+  color: var(--home-text-4);
+}
+
+.kunai-sieve-box__clear {
+  border: none;
+  background: transparent;
+  color: var(--home-text-4);
+  cursor: pointer;
+  padding: 0.1rem;
+  display: inline-flex;
+}
+
+.kunai-sieve-box__clear:hover {
+  color: var(--home-text-1);
+}
+
+.kunai-sieve-mark {
+  background: transparent;
+  color: var(--home-text-1);
+  text-decoration: underline;
+  text-decoration-color: var(--lane);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+/* Directory stage + right gutter preview card */
+.kunai-dir-stage {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 0.65fr) minmax(0, 1fr);
-  gap: clamp(2rem, 5vw, 4.5rem);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
   align-items: start;
 }
 
-.kunai-band h2,
-.kunai-section-head h2,
-.kunai-final h2 {
-  margin: 0.6rem 0 0;
-  max-width: 16ch;
-  font-family: var(--font-serif), Georgia, serif;
-  font-size: var(--kunai-text-display);
-  line-height: var(--kunai-leading-tight);
-  font-weight: var(--kunai-weight-display);
-  letter-spacing: -0.03em;
-  text-wrap: balance;
-  color: var(--color-fd-foreground);
+@media (min-width: 1100px) {
+  .kunai-dir-stage {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
 }
 
-.kunai-section-head {
-  margin-bottom: clamp(2rem, 4vw, 3.5rem);
+.kunai-dir-colhead {
+  display: none;
+  grid-template-columns: minmax(8.5rem, 1.1fr) minmax(0, 1fr) 7.5rem 6.5rem;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding: 0.45rem 0.75rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-text-4);
 }
 
-/* The bento section prints one quiet line of usage under its heading, so the heading
-   hands over to it sooner than the full section gap would. */
-.kunai-home-highlights .kunai-section-head {
-  margin-bottom: 1rem;
-}
-.kunai-final {
-  border: 1px solid var(--kunai-line);
-  background: var(--kunai-surface);
-  box-shadow: var(--kunai-card-shadow);
-  transition:
-    border-color 200ms var(--kunai-ease-out),
-    box-shadow 200ms var(--kunai-ease-out),
-    transform 200ms var(--kunai-ease-out);
+@media (min-width: 768px) {
+  .kunai-dir-colhead {
+    display: grid;
+  }
 }
 
-.kunai-status-dot {
-  height: 0.625rem;
-  width: 0.625rem;
-  border-radius: 9999px;
-  box-shadow: var(--kunai-shadow-sm);
+/* Shared Hairline Row Language */
+.kunai-row-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--home-hair);
 }
 
-.kunai-status-dot--focus {
-  background: var(--kunai-accent);
-}
-.provider-interactive-tab.is-active {
-  background: color-mix(in oklab, var(--kunai-accent) 10%, var(--kunai-surface));
-  border-color: var(--kunai-accent-deep);
-  color: var(--kunai-accent);
-}
-.flag-checkbox-wrapper.is-checked {
-  border-color: var(--kunai-accent);
-  background: color-mix(in oklab, var(--kunai-accent) 5%, var(--kunai-surface-strong));
+.kunai-row-item {
+  border-bottom: 1px solid var(--home-hair);
+  transition: opacity 150ms var(--ease-out);
 }
 
-.kunai-final {
+.kunai-row-item.is-dimmed {
+  opacity: 0.32;
+}
+
+.kunai-row-empty {
+  padding: 1.75rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--home-text-3);
+}
+
+.kunai-row-empty__reset {
+  border: none;
+  background: transparent;
+  color: var(--home-lane-kunai);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.kunai-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.kunai-dir-row__link {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 52px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1.5rem;
-  align-items: end;
-  border-radius: 0.6rem;
-  padding: clamp(1.5rem, 4vw, 3rem);
-  margin-bottom: 2rem;
+  grid-template-columns: minmax(8.5rem, 1.1fr) minmax(0, 1fr) 7.5rem 6.5rem;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--home-radius-row);
+  text-decoration: none;
+  color: var(--home-text-1);
+  transition: background-color 150ms var(--ease-out);
 }
 
-.kunai-final h2 {
-  max-width: 15ch;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .kunai-reveal {
-    animation: none;
-  }
-  .kunai-button,
-  .kunai-final,
-  .palette-item {
-    transition: none !important;
-    transform: none !important;
-    animation: none !important;
-  }
-}
-
-@media (max-width: 980px) {
-  .kunai-band,
-  .kunai-final {
-    grid-template-columns: 1fr;
-  }
-
-  .kunai-band h2,
-  .kunai-section-head h2,
-  .kunai-final h2 {
-    font-size: 2.75rem;
-  }
-}
-
-@media (max-width: 640px) {
-  .kunai-terminal-stage {
-    border-radius: 0.5rem;
-    padding: 0.5rem;
-  }
-
-  .kunai-terminal-top {
-    justify-content: start;
-    font-size: 0.65rem;
-    padding: 0.5rem 0.6rem;
-  }
-
-  .kunai-band h2,
-  .kunai-section-head h2,
-  .kunai-final h2 {
-    font-size: 2.2rem;
-  }
-
-  .kunai-terminal-body {
-    font-size: 0.78rem;
-    padding: 0.85rem;
-    min-height: 200px;
-  }
-}
-
-/* Kunai × Fumadocs — extended rules live in docs-chrome.css */
-
-/* Preset pills + interactive chips — unified press feedback */
-.kunai-terminal-stage button:active,
-.os-tab-button:active {
-  transform: scale(0.96) !important;
-}
-
-/* Premium Code Blocks (home surfaces only — docs MDX scoped in docs-chrome.css) */
-.kunai-home .prose pre,
-.kunai-home .fd-codeblock,
-.kunai-home pre:not(#nd-docs-layout pre) {
-  background-color: color-mix(in oklab, var(--kunai-bg) 78%, black);
-  border: 1px solid var(--kunai-line);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  border-radius: 0.75rem;
-  padding: 0.85rem 1rem;
-  min-height: 0;
-  transition:
-    border-color 200ms var(--kunai-ease-out),
-    box-shadow 200ms var(--kunai-ease-out);
-}
 @media (hover: hover) and (pointer: fine) {
-  .kunai-home .prose pre:hover,
-  .kunai-home .fd-codeblock:hover {
-    border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
-    box-shadow:
-      0 4px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent),
-      0 4px 20px rgba(0, 0, 0, 0.3);
+  .kunai-row-item.is-active .kunai-dir-row__link,
+  .kunai-dir-row__link:hover {
+    background: var(--home-raise-2);
   }
 }
 
-/* Premium Tables (home only — docs tables scoped above) */
-.kunai-home table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  margin-block: 1.5rem;
-  border: 1px solid var(--kunai-line);
-  border-radius: 0.75rem;
+.kunai-dir-row__link:focus-visible {
+  outline: 2px solid var(--home-lane-kunai);
+  outline-offset: -2px;
+  background: var(--home-raise-2);
+}
+
+.kunai-dir-row__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9375rem;
+  font-weight: var(--kunai-weight-medium);
+  color: var(--home-text-1);
+  min-width: 0;
+}
+
+.kunai-dir-row__domain {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--home-text-4);
+  white-space: nowrap;
   overflow: hidden;
-  background: color-mix(in oklab, var(--kunai-surface) 40%, transparent);
+  text-overflow: ellipsis;
 }
-.kunai-home table th {
-  background: color-mix(in oklab, var(--kunai-surface-strong) 80%, transparent);
-  color: var(--color-fd-foreground);
-  font-family: var(--font-serif);
-  font-weight: var(--kunai-weight-semibold);
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.85rem 1.1rem !important;
-  border-bottom: 1px solid var(--kunai-line);
-  text-align: left;
+
+.kunai-dir-row__caps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
 }
-.kunai-home table td {
-  padding: 0.85rem 1.1rem !important;
-  border-bottom: 1px solid var(--kunai-line);
-  font-size: 0.85rem;
-  color: var(--color-fd-muted-foreground);
+
+.kunai-cap-glyph {
+  color: var(--home-text-4);
+  opacity: 0.35;
 }
-.kunai-home table tr:last-child td {
-  border-bottom: none;
+
+.kunai-cap-glyph.is-on {
+  color: var(--lane);
+  opacity: 0.95;
 }
+
+.kunai-dir-row__meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.kunai-rec-chip {
+  border-radius: var(--home-radius-pill);
+  background: var(--home-raise-3);
+  border: 1px solid var(--home-hair);
+  color: var(--home-text-2);
+  padding: 0.12rem 0.52rem;
+  font-size: 0.75rem;
+  font-weight: var(--kunai-weight-medium);
+}
+
+.kunai-row-arrow {
+  color: var(--home-text-4);
+  transition:
+    transform 150ms var(--ease-out),
+    color 150ms var(--ease-out);
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .kunai-home table tr:hover td {
-    color: var(--color-fd-foreground);
-    background: color-mix(in oklab, var(--kunai-surface-strong) 40%, transparent);
+  .kunai-dir-row__link:hover .kunai-row-arrow,
+  .kunai-editorial-row:hover .kunai-row-arrow {
+    transform: translateX(3px);
+    color: var(--home-text-1);
   }
 }
 
-/* Quick Install Section */
-.install-section {
-  position: relative;
-  margin-top: 4rem;
-  border: 1px solid var(--kunai-line);
-  background: linear-gradient(145deg, rgba(19, 15, 23, 0.4), rgba(30, 24, 36, 0.4));
-  backdrop-filter: blur(12px);
-  border-radius: 1.5rem;
-  padding: clamp(1.5rem, 4vw, 3rem);
-  box-shadow: var(--kunai-card-shadow);
+.kunai-dir-row__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--home-text-4);
+  cursor: pointer;
 }
 
-/*
- * The OS tablist scrolls rather than clips.
- *
- * Three tabs at full padding measure ~315px, which does not fit the ~270px
- * content box of a 390px phone. The shell's `overflow-x-hidden` turned that
- * into a silently truncated "WINDOWS" tab — an option the user cannot see or
- * reach. Scrolling keeps every tab reachable; the tighter padding below means
- * most phones never need to scroll at all.
- */
+@media (min-width: 1100px) {
+  .kunai-dir-row__toggle {
+    display: none;
+  }
+}
+
+.kunai-dir-mobile-detail {
+  overflow: hidden;
+}
+
+.kunai-dir-mobile-detail__inner {
+  padding: 0.25rem 0.75rem 1rem 1.85rem;
+}
+
+/* Persistent Desktop Floating Preview Card — aligned flush with list top */
+.kunai-dir-gutter {
+  display: none;
+  position: relative;
+  min-height: 260px;
+}
+
+@media (min-width: 1100px) {
+  .kunai-dir-gutter {
+    display: block;
+    padding-top: 2rem;
+  }
+}
+
+.kunai-preview-card {
+  position: relative;
+  width: 320px;
+  border-radius: var(--home-radius-card);
+  background: var(--home-raise-2);
+  box-shadow: var(--home-float-hi);
+  padding: 1.25rem;
+}
+
+.kunai-preview-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.kunai-preview-lane-chip {
+  border-radius: var(--home-radius-pill);
+  background: var(--home-lane-fill);
+  box-shadow: inset 0 0 0 1px var(--home-lane-edge);
+  color: var(--lane);
+  padding: 0.14rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: var(--kunai-weight-medium);
+}
+
+.kunai-preview-card__domain {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-text-4);
+}
+
+.kunai-preview-card__desc {
+  margin: 0.75rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--home-text-2);
+}
+
+.kunai-preview-card__caps {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.kunai-preview-cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--home-text-4);
+  opacity: 0.55;
+}
+
+.kunai-preview-cap.is-on {
+  color: var(--home-text-2);
+  opacity: 1;
+}
+
+.kunai-preview-cap.is-on svg {
+  color: var(--lane);
+}
+
+.kunai-preview-card__note {
+  margin: 0.85rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--home-hair);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--home-text-4);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.kunai-preview-try {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 10px;
+  border: 1px solid var(--home-hair-strong);
+  background: var(--home-well);
+  padding: 0.5rem 0.85rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-text-1);
+  cursor: pointer;
+  transition:
+    border-color 150ms var(--ease-out),
+    background-color 150ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-preview-try:hover {
+    border-color: var(--home-lane-edge);
+    background: var(--home-raise-3);
+  }
+}
+
+.kunai-preview-try:active {
+  transform: scale(0.97);
+}
+
+/* ── 05 · Solid Ink-Stone Bento Tiles ───────────────────────────────────── */
+
+.kunai-bento-tile {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-radius: var(--home-radius-card);
+  background: var(--home-raise-1);
+  box-shadow:
+    inset 0 0 0 1px var(--home-hair-strong),
+    var(--home-specular);
+  padding: 1.5rem 1.75rem;
+}
+
+.kunai-bento-tile__label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  font-weight: var(--kunai-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--home-text-4);
+}
+
+.kunai-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: var(--home-radius-pill);
+  border: 1px solid var(--home-hair-strong);
+  background: var(--home-raise-2);
+  padding: 0.38rem 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: var(--kunai-weight-medium);
+  color: var(--home-text-2);
+}
+
+.kunai-mode-chip.is-primary {
+  border-color: var(--home-lane-edge);
+  background: var(--home-lane-fill);
+  color: var(--home-text-1);
+}
+
+/* ── 06 · De-Boxed 3-Column Install Detail ──────────────────────────────── */
+
 .os-tab-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  border-radius: var(--home-radius-pill);
+  background: var(--home-well);
+  box-shadow:
+    inset 0 1px 0 rgb(0 0 0 / 0.5),
+    inset 0 0 0 1px var(--home-hair);
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
@@ -528,295 +1848,156 @@
 
 .os-tab-button {
   position: relative;
-  padding: 0.6rem 1.25rem;
+  padding: 0.42rem 0.95rem;
   white-space: nowrap;
   flex: 0 0 auto;
-  font-size: var(--kunai-text-code);
+  font-size: 0.75rem;
   font-weight: var(--kunai-weight-medium);
-  border-radius: 0.5rem;
-  color: var(--color-fd-muted-foreground);
-  border: 1px solid transparent;
-  transition:
-    color 200ms var(--kunai-ease-out),
-    border-color 200ms var(--kunai-ease-out),
-    background-color 200ms var(--kunai-ease-out);
+  border-radius: var(--home-radius-pill);
+  color: var(--home-text-3);
+  border: none;
+  background: transparent;
   cursor: pointer;
+  transition:
+    color 150ms var(--ease-out),
+    transform 140ms var(--ease-out);
 }
+
 .os-tab-button:active {
-  background-color: var(--kunai-surface);
+  transform: scale(0.97);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .os-tab-button:hover {
-    color: var(--color-fd-foreground);
-    border-color: var(--kunai-line);
-    background-color: var(--kunai-surface-strong);
-  }
-}
-/* Selected, not primary: accent text on the accent fill (7.9:1). A filled gradient here
-   competed with the one primary action per view, and its white label measured 3.6:1. */
-.os-tab-button.active {
-  color: var(--kunai-accent);
-  border-color: var(--kunai-accent-deep);
-  background: color-mix(in oklab, var(--kunai-accent) 10%, var(--kunai-surface));
+.os-tab-button.active,
+.os-tab-button:hover {
+  color: var(--home-text-1);
 }
 
-.prereq-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: 9999px;
-  font-size: var(--kunai-text-caption);
-  font-weight: var(--kunai-weight-medium);
-  font-family: var(--font-mono);
-  border: 1px solid var(--kunai-line);
-}
-.prereq-badge.installed {
-  background-color: color-mix(in oklab, var(--kunai-ok) 10%, transparent);
-  border-color: color-mix(in oklab, var(--kunai-ok) 30%, transparent);
-  color: var(--kunai-ok);
-}
-.prereq-badge.missing {
-  background-color: color-mix(in oklab, var(--kunai-warning) 10%, transparent);
-  border-color: color-mix(in oklab, var(--kunai-warning) 30%, transparent);
-  color: var(--kunai-warning);
+.os-tab-button__bg {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--home-radius-pill);
+  background: var(--home-raise-3);
+  box-shadow:
+    inset 0 0 0 1px var(--home-hair-strong),
+    var(--home-specular);
 }
 
-.install-step-card {
-  background: color-mix(in oklab, var(--kunai-surface) 88%, transparent);
-  border: 1px solid var(--kunai-line);
-  border-radius: var(--kunai-radius-inner);
-  padding: 1.25rem;
-  box-shadow: inset 0 1px 0 color-mix(in oklab, white 4%, transparent);
+.kunai-tab-panel {
+  opacity: 1;
+  transform: translateY(0);
   transition:
-    border-color var(--kunai-duration-ui) var(--kunai-ease-out),
-    box-shadow var(--kunai-duration-ui) var(--kunai-ease-out);
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
 }
 
-/* The card is not a link, so it does not lift: a rise implies a click. The edge warms
-   a little, and only where a pointer can hover (touch fires a stuck hover on tap). */
-@media (hover: hover) and (pointer: fine) {
-  .install-step-card:hover {
-    border-color: color-mix(in oklab, var(--kunai-accent) 28%, var(--kunai-line));
-    box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm);
+@starting-style {
+  .kunai-tab-panel {
+    opacity: 0;
+    transform: translateY(4px);
   }
 }
 
-.kunai-highlight-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border: 1px solid var(--kunai-line);
-  border-radius: var(--kunai-radius-outer);
-  overflow: hidden;
-  background: color-mix(in oklab, var(--kunai-surface) 70%, transparent);
-}
-
-.kunai-highlight-row {
+.kunai-install-columns {
   display: grid;
-  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
-  padding: 1.1rem 1.25rem;
-  border-bottom: 1px solid var(--kunai-line);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--home-hair);
+  border-bottom: 1px solid var(--home-hair);
 }
 
-.kunai-highlight-row:last-child {
-  border-bottom: none;
-}
-
-@media (max-width: 767.98px) {
-  .kunai-highlight-row {
-    grid-template-columns: 1fr;
-    gap: 0.35rem;
-  }
-}
-
-/* ── Hero: paired install commands ─────────────────────────────────────────
-   Both platforms sit in one stack so the choice is made once. The OS label is
-   a fixed column so the two commands align on their first character.
-
-   The command wraps rather than scrolling: a `curl … | bash` line that is cut
-   off mid-URL asks the reader to trust what they cannot see. */
-.kunai-hero-install {
+.kunai-install-col {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  max-width: 42rem;
+  gap: 1.5rem;
+  padding: 1.75rem 1.5rem;
 }
 
-.kunai-hero-install .kunai-code-row {
-  align-items: flex-start;
-  gap: 0.75rem;
-  transition:
-    border-color var(--kunai-duration-ui) var(--kunai-ease-out),
-    box-shadow var(--kunai-duration-ui) var(--kunai-ease-out);
+.kunai-install-col:first-child {
+  padding-inline-start: 0;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .kunai-hero-install .kunai-code-row:hover {
-    border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
-    box-shadow: var(--kunai-shadow-sm);
-  }
+.kunai-install-col:last-child {
+  padding-inline-end: 0;
 }
 
-.kunai-hero-install__os {
-  flex: 0 0 auto;
-  width: 7.5rem;
-  padding-top: 0.1rem;
-  color: var(--color-fd-muted-foreground);
-  font-size: var(--kunai-text-caption);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.kunai-install-col + .kunai-install-col {
+  border-left: 1px solid var(--home-hair);
 }
 
-.kunai-hero-install__cmd {
-  flex: 1 1 auto;
+.kunai-install-col__cmd {
+  margin-top: auto;
+}
+
+.kunai-install-col__cmd .kunai-code-row {
+  flex-wrap: nowrap;
+  background: var(--home-well);
+  border-color: var(--home-hair-strong);
+}
+
+.kunai-install-col__cmd .kunai-code-row > span:first-child {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.kunai-install-col__cmd .kunai-code-row > span:first-child::-webkit-scrollbar {
+  display: none;
+}
+
+.kunai-install-col__num {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-lane-kunai);
+}
+
+.kunai-install-col__title {
+  margin: 0.45rem 0 0;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 1.125rem;
+  font-weight: var(--kunai-weight-medium);
+  letter-spacing: -0.015em;
+  color: var(--home-text-1);
+}
+
+.kunai-install-col__body {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
   line-height: 1.6;
+  color: var(--home-text-3);
 }
 
-/* The copy control must not shrink when the command wraps to two lines. */
-.kunai-hero-install .kunai-code-row > :last-child {
-  flex: 0 0 auto;
-}
-
-/* ── Hero kinds row ────────────────────────────────────────────────────────
-   What Kunai plays, in the server-rendered HTML.
-
-   Visually distinct from the proof row below it on purpose: this row is the
-   answer to "what is this", the proof row is "can I trust it". Same family,
-   different job — so this one takes foreground weight and hairline rules,
-   and the proof row keeps its muted dots. */
-.kunai-hero-kinds {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 1rem;
-  margin: 1.25rem 0 0;
-  font-size: 0.8125rem;
-  line-height: 1.4;
-}
-
-.kunai-hero-kinds__item {
-  position: relative;
-  font-weight: var(--kunai-weight-semibold);
-  letter-spacing: 0.01em;
-  color: var(--color-fd-foreground);
-}
-
-.kunai-hero-kinds__item + .kunai-hero-kinds__item::before {
-  content: "";
-  position: absolute;
-  left: -0.5rem;
-  top: 0.15em;
-  bottom: 0.15em;
-  width: 1px;
-  background: var(--kunai-line);
-}
-
-.kunai-hero-kinds__hint {
+.kunai-other-disclosure__summary {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  color: var(--color-fd-muted-foreground);
-  font-size: 0.75rem;
-}
-
-/* `kbd` ships as unstyled browser monospace and belongs to no design system
-   until it is themed. Scoped here rather than globally so the docs prose
-   keeps whatever it already does. */
-.kunai-hero-kinds__hint kbd {
-  border: 1px solid var(--kunai-line);
-  border-radius: 0.375rem;
-  background: color-mix(in oklab, var(--kunai-surface) 80%, transparent);
-  padding: 0.1rem 0.4rem;
-  color: color-mix(in oklab, var(--kunai-accent) 70%, var(--color-fd-foreground));
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: var(--kunai-text-caption);
-  line-height: 1.5;
-}
-
-/* The h1 is the first text in the hero now that the eyebrow is gone, so it
-   sets its own top edge. `.kunai-display-title` caps at 20ch for section
-   headings; the hero headline is longer and needs the room, and declaring it
-   here beats relying on the source order between a utility and a component
-   class that share specificity. */
-.kunai-hero-static h1.kunai-display-title {
-  max-width: 24ch;
-  margin-top: 0;
-}
-
-/* ── Hero proof row ────────────────────────────────────────────────────────
-   Four verifiable facts, each a link to where it can be checked. */
-.kunai-proof-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 1.5rem;
-  margin: 1.5rem 0 0;
-  padding: 0;
+  gap: 0.5rem;
   list-style: none;
-  font-size: 0.75rem;
-  color: var(--color-fd-muted-foreground);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--home-text-3);
+  padding-block: 0.4rem;
+  transition: color 150ms var(--ease-out);
 }
 
-.kunai-proof-row li {
-  position: relative;
-  padding-block: 0.35rem;
+.kunai-other-disclosure__summary::-webkit-details-marker {
+  display: none;
 }
 
-.kunai-proof-row li + li::before {
-  content: "";
-  position: absolute;
-  left: -0.75rem;
-  top: 50%;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: currentcolor;
-  opacity: 0.4;
-  transform: translateY(-50%);
+.kunai-other-disclosure__summary:hover {
+  color: var(--home-text-1);
 }
 
-.kunai-proof-row a {
-  color: inherit;
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition:
-    color 150ms var(--kunai-ease-out),
-    border-color 150ms var(--kunai-ease-out);
+.kunai-other-disclosure__chev {
+  transition: transform 180ms var(--ease-out);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .kunai-proof-row a:hover {
-    color: var(--color-fd-foreground);
-    border-bottom-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
-  }
+.kunai-other-disclosure[open] .kunai-other-disclosure__chev {
+  transform: rotate(180deg);
 }
 
-/* ── Terminal preset row ───────────────────────────────────────────────────
-   Labelled so the chips read as an invitation rather than decoration. */
-.kunai-terminal-presets {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem 0.5rem;
-}
-
-/* ── Secondary install paths ───────────────────────────────────────────────
-   Below the three-step flow and visually quieter: it is the alternative
-   route, not a fourth step. */
 .kunai-other-paths {
-  margin-top: 2rem;
-  padding-top: 1.75rem;
-  border-top: 1px solid var(--kunai-line);
+  margin-top: 1rem;
+  padding-top: 1rem;
 }
 
 .kunai-other-paths__head {
@@ -829,54 +2010,782 @@
 .kunai-other-paths__commands {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.kunai-other-paths__commands .kunai-code-row {
-  overflow-wrap: anywhere;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
 }
 
 .kunai-other-paths__links {
   display: flex;
   flex-wrap: wrap;
   gap: 0 1.25rem;
-  margin: 1rem 0 0;
+  margin: 0.75rem 0 0;
   font-size: 0.75rem;
-  color: var(--color-fd-muted-foreground);
+  color: var(--home-text-4);
 }
 
 .kunai-other-paths__links a {
   display: inline-flex;
   align-items: center;
-  min-height: 2.5rem;
+  min-height: 2.25rem;
   color: inherit;
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition:
-    color 150ms var(--kunai-ease-out),
-    border-color 150ms var(--kunai-ease-out);
+    color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .kunai-other-paths__links a:hover {
-    color: var(--color-fd-foreground);
-    border-bottom-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
+    color: var(--home-text-1);
+    border-bottom-color: var(--home-hair-strong);
+  }
+}
+
+/* ── 07 / 08 · Editorial Rows (Start Here & Open Source) ────────────────── */
+
+.kunai-editorial-row {
+  display: grid;
+  grid-template-columns: auto minmax(10rem, 15rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  min-height: 58px;
+  padding: 0.85rem 0.75rem;
+  border-radius: var(--home-radius-row);
+  text-decoration: none;
+  transition:
+    background-color 150ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+.kunai-home-open .kunai-editorial-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-editorial-row:hover {
+    background: var(--home-raise-2);
+  }
+}
+
+.kunai-editorial-row:active {
+  transform: scale(0.99);
+}
+
+.kunai-editorial-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 10px;
+  background: var(--home-raise-2);
+  border: 1px solid var(--home-hair);
+  color: var(--home-text-2);
+  flex: none;
+}
+
+.kunai-editorial-row__title {
+  font-size: 0.9375rem;
+  font-weight: var(--kunai-weight-medium);
+  color: var(--home-text-1);
+}
+
+.kunai-editorial-row__desc {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--home-text-3);
+}
+
+/* ── 09 · Workshop Single-Surface Cards & Uniform Thumbnail Grade ───────── */
+
+.kunai-workshop-card {
+  border-radius: var(--home-radius-card);
+  background: var(--home-raise-1);
+  box-shadow:
+    inset 0 0 0 1px var(--home-hair-strong),
+    var(--home-specular);
+  transition:
+    transform 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out),
+    background-color 180ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-workshop-card:hover {
+    transform: translateY(-2px);
+    background: var(--home-raise-2);
+    box-shadow: var(--home-float);
+  }
+}
+
+.kunai-workshop-card:active {
+  transform: scale(0.99);
+}
+
+.kunai-workshop-stage__frame {
+  position: relative;
+  border-radius: 0.7rem;
+  overflow: hidden;
+  border: 1px solid var(--home-hair);
+  background: var(--home-well);
+}
+
+.kunai-workshop-stage__frame .kunai-workshop-preview {
+  aspect-ratio: 16 / 10;
+  border: none;
+  border-radius: 0;
+}
+
+.kunai-workshop-stage__frame .kunai-workshop-preview img {
+  filter: saturate(0.84) brightness(0.92);
+  transition:
+    transform 220ms var(--ease-out),
+    filter 220ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-workshop-card:hover .kunai-workshop-stage__frame .kunai-workshop-preview img {
+    filter: saturate(1) brightness(1);
+    transform: scale(1.03);
+  }
+}
+
+.kunai-workshop-stage__host {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--home-hair-strong);
+  background: color-mix(in oklab, #060605 86%, transparent);
+  backdrop-filter: blur(8px);
+  padding: 0.16rem 0.55rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-text-2);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-workshop-card:hover .kunai-workshop-stage__host {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── StickItUpX-inspired Interactive Sponsor Dock (with hover brand morph) ─ */
+
+.kunai-sponsor-dock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 14px;
+  background: var(--home-well, #060605);
+  box-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 0.55),
+    inset 0 0 0 1px var(--home-hair-strong, rgb(255 250 240 / 0.12));
+  padding: 0.55rem 0.7rem;
+}
+
+.kunai-sponsor-dock__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
+  font-weight: var(--kunai-weight-medium);
+  color: var(--home-text-1, #f5f3ee);
+  padding-inline-end: 0.2rem;
+}
+
+.kunai-sponsor-dock__sep {
+  width: 1px;
+  height: 1.25rem;
+  background: var(--home-hair-strong, rgb(255 250 240 / 0.12));
+}
+
+.kunai-sponsor-dock__slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  flex: 1 1 auto;
+}
+
+@media (min-width: 768px) {
+  .kunai-sponsor-dock__slots--wide {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.kunai-sponsor-slot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.2rem;
+  border-radius: 10px;
+  border: 1px dashed rgb(255 250 240 / 0.16);
+  background: var(--home-raise-1, #131311);
+  padding: 0.36rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: var(--kunai-weight-medium);
+  color: var(--home-text-3, #a5a29a);
+  text-decoration: none;
+  overflow: hidden;
+  transition:
+    border-color 180ms var(--ease-out),
+    background-color 180ms var(--ease-out),
+    color 180ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+.kunai-sponsor-slot__rest,
+.kunai-sponsor-slot__preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+
+.kunai-sponsor-slot__preview {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(4px);
+  color: var(--home-text-1, #f5f3ee);
+}
+
+.kunai-sponsor-slot__mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--home-lane-kunai, #ff8fb0);
+  flex: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-sponsor-slot:hover,
+  .kunai-sponsor-slot:focus-visible {
+    border-style: solid;
+    border-color: var(--home-hair-strong, rgb(255 250 240 / 0.24));
+    background: var(--home-raise-2, #1b1b19);
+    transform: translateY(-1px);
+  }
+
+  .kunai-sponsor-slot:hover .kunai-sponsor-slot__rest,
+  .kunai-sponsor-slot:focus-visible .kunai-sponsor-slot__rest {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  .kunai-sponsor-slot:hover .kunai-sponsor-slot__preview,
+  .kunai-sponsor-slot:focus-visible .kunai-sponsor-slot__preview {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kunai-sponsor-slot:active {
+  transform: scale(0.97);
+}
+
+/* ── 10 · Unboxed Editorial Final CTA ───────────────────────────────────── */
+
+.kunai-home-final {
+  position: relative;
+  padding-block: clamp(3.5rem, 7vw, 5.5rem) clamp(2rem, 5vw, 3.5rem);
+}
+
+.kunai-final-h2 {
+  margin: 0;
+  max-width: 18ch;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(2.25rem, 4.6vw, 4rem);
+  line-height: 1;
+  font-weight: var(--kunai-weight-display);
+  letter-spacing: -0.03em;
+  color: var(--home-text-1);
+}
+
+/* ── Floating Bottom Dock & Morphing Spring Drawer ──────────────────────── */
+
+.kunai-dock-anchor {
+  position: fixed;
+  inset-inline: 0;
+  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 45;
+}
+
+.kunai-dock-pill {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 44px;
+  padding: 0 0.65rem 0 0.8rem;
+  border-radius: 22px;
+  border: none;
+  background: color-mix(in oklab, var(--home-raise-2) 94%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--home-float-hi);
+  color: var(--home-text-1);
+  font-size: 0.8125rem;
+  font-weight: var(--kunai-weight-medium);
+  cursor: pointer;
+  transition:
+    padding 180ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+.kunai-dock-pill.is-peeking {
+  padding-inline: 0.95rem 0.75rem;
+}
+
+.kunai-dock-pill:active {
+  transform: scale(0.97);
+}
+
+.kunai-dock-pill:focus-visible {
+  outline: 2px solid var(--home-lane-kunai);
+  outline-offset: 3px;
+}
+
+.kunai-dock-pill__label {
+  min-width: 6.5rem;
+  text-align: left;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+}
+
+.kunai-dock-pill__kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 7px;
+  border: 1px solid var(--home-hair-strong);
+  background: var(--home-raise-4);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-text-2);
+}
+
+.kunai-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(6 6 5 / 0.72);
+}
+
+.kunai-drawer-stage {
+  position: fixed;
+  inset-inline: 0;
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  z-index: 51;
+  display: flex;
+  justify-content: center;
+  padding-inline: 12px;
+  pointer-events: none;
+}
+
+.kunai-drawer-sheet {
+  pointer-events: auto;
+  width: min(640px, calc(100vw - 24px));
+  background: var(--home-raise-2);
+  box-shadow: var(--home-float-hi);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.kunai-drawer-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.25rem 0.75rem 0.6rem;
+  border-bottom: 1px solid var(--home-hair);
+}
+
+.kunai-drawer-drag-zone {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding-block: 0.45rem 0.5rem;
+  touch-action: none;
+  cursor: grab;
+}
+
+.kunai-drawer-drag-zone:active {
+  cursor: grabbing;
+}
+
+.kunai-drawer-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--home-hair-strong);
+}
+
+.kunai-drawer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.kunai-drawer-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.18rem;
+  border-radius: var(--home-radius-pill);
+  background: var(--home-well);
+  box-shadow: inset 0 0 0 1px var(--home-hair);
+}
+
+.kunai-drawer-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.34rem 0.7rem;
+  border: none;
+  border-radius: var(--home-radius-pill);
+  background: transparent;
+  color: var(--home-text-3);
+  font-size: 0.75rem;
+  font-weight: var(--kunai-weight-medium);
+  cursor: pointer;
+  transition: color 140ms var(--ease-out);
+}
+
+.kunai-drawer-tab.is-active,
+.kunai-drawer-tab:hover {
+  color: var(--home-text-1);
+}
+
+.kunai-drawer-tab__bg {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--home-radius-pill);
+  background: var(--home-raise-3);
+  box-shadow:
+    inset 0 0 0 1px var(--home-hair-strong),
+    var(--home-specular);
+}
+
+.kunai-drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid var(--home-hair);
+  background: var(--home-well);
+  color: var(--home-text-3);
+  cursor: pointer;
+  transition:
+    color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out);
+}
+
+.kunai-drawer-close:hover {
+  color: var(--home-text-1);
+  border-color: var(--home-hair-strong);
+}
+
+.kunai-drawer-body-clip {
+  overflow: hidden;
+}
+
+.kunai-drawer-body {
+  padding: 0.6rem;
+}
+
+.kunai-drawer-search {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--home-line-control);
+  background: var(--home-well);
+  margin-bottom: 0.5rem;
+}
+
+.kunai-drawer-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--home-text-1);
+  font-size: 0.875rem;
+  outline: 2px solid transparent;
+}
+
+.kunai-drawer-search:has(.kunai-drawer-search__input:focus-visible) {
+  border-color: var(--kunai-accent);
+  box-shadow: 0 0 0 1px var(--kunai-accent);
+}
+
+.kunai-drawer-search__input::placeholder {
+  color: var(--home-text-4);
+}
+
+.kunai-drawer-search__meta {
+  display: none;
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--home-text-4);
+}
+
+@media (min-width: 560px) {
+  .kunai-drawer-search__meta {
+    display: inline;
+  }
+}
+
+.kunai-drawer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kunai-drawer-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out);
+}
+
+.kunai-drawer-item.is-selected {
+  background: var(--home-raise-3);
+}
+
+.kunai-drawer-empty {
+  padding: 1.5rem 0.75rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--home-text-4);
+}
+
+.kunai-surprise-panel {
+  padding: 0.4rem;
+}
+
+.kunai-surprise-card {
+  border-radius: 14px;
+  background: var(--home-well);
+  box-shadow: inset 0 0 0 1px var(--home-hair-strong);
+  padding: 1rem 1.1rem;
+}
+
+.kunai-surprise-roll {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: var(--home-radius-pill);
+  border: 1px solid var(--home-hair-strong);
+  background: var(--home-well);
+  padding: 0.42rem 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: var(--kunai-weight-medium);
+  color: var(--home-text-2);
+  cursor: pointer;
+  transition:
+    color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+.kunai-surprise-roll:hover {
+  color: var(--home-text-1);
+  border-color: var(--home-hair-strong);
+  background: var(--home-raise-3);
+}
+
+.kunai-surprise-roll:active {
+  transform: scale(0.97);
+}
+
+.kunai-drawer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.9rem;
+  border-top: 1px solid var(--home-hair);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--home-text-4);
+}
+
+/* ── Responsive adjustments ─────────────────────────────────────────────── */
+
+@media (max-width: 960px) {
+  /* minmax(0, …), not 1fr: a bare 1fr track never shrinks below its longest
+     nowrap command, which pushed the Copy button off a phone screen. */
+  .kunai-install-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kunai-install-col {
+    padding: 1.5rem 0;
+  }
+
+  .kunai-install-col + .kunai-install-col {
+    border-left: none;
+    border-top: 1px solid var(--home-hair);
+  }
+
+  .kunai-editorial-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .kunai-editorial-row__desc {
+    grid-column: 2 / -1;
+  }
+
+  .kunai-editorial-row:not(.kunai-home-open *) > .kunai-row-arrow {
+    grid-row: 1;
+    grid-column: 3;
   }
 }
 
 @media (max-width: 767.98px) {
+  .kunai-home-col,
+  .kunai-home-col--wide {
+    width: min(760px, calc(100vw - 24px));
+  }
+
+  .kunai-scene-deck {
+    gap: 0;
+  }
+
+  .kunai-scene-card {
+    width: 148px;
+    margin-inline: -20px;
+    padding: 0.55rem 0.65rem;
+  }
+
+  /* A phone cannot fit the fanned deck without the cards' text colliding.
+     Show only the active lane's card; the lane pill below still switches. */
+  .kunai-scene-card:not(.is-active) {
+    display: none;
+  }
+
+  .kunai-scene-card.is-active {
+    width: min(300px, calc(100vw - 48px));
+    margin-inline: 0;
+  }
+
+  .kunai-dir-row__link {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .kunai-dir-row__domain,
+  .kunai-dir-row__caps {
+    display: none;
+  }
+
+  .kunai-dir-row__meta {
+    min-width: 0;
+  }
+
   .kunai-other-paths__commands {
     grid-template-columns: 1fr;
   }
 
-  .kunai-hero-install__os {
-    width: 4.5rem;
+  .kunai-drawer-stage {
+    bottom: 0;
+    padding-inline: 0;
+  }
+
+  .kunai-drawer-sheet {
+    width: 100%;
+    border-radius: 20px 20px 0 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 
-@media (max-width: 30rem) {
+@media (max-width: 520px) {
+  .kunai-scene-deck {
+    height: 108px;
+  }
+
+  .kunai-scene-card {
+    width: 132px;
+    margin-inline: -24px;
+  }
+
+  .kunai-scene-card.is-active {
+    width: min(300px, calc(100vw - 48px));
+    margin-inline: 0;
+  }
+
+  .kunai-terminal-body {
+    font-size: 0.78rem;
+    padding: 0.85rem;
+    min-height: 210px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kunai-tab-panel {
+    transform: none;
+    transition: opacity 150ms ease;
+  }
+
+  @starting-style {
+    .kunai-tab-panel {
+      opacity: 0;
+      transform: none;
+    }
+  }
+
+  .kunai-spotlight::before,
+  .kunai-spotlight::after {
+    display: none;
+  }
+
+  .kunai-install-dock__thumb {
+    transition: none !important;
+  }
+
+  .kunai-sponsor-slot,
+  .kunai-workshop-card,
+  .kunai-editorial-row,
+  .kunai-preview-try,
+  .kunai-dock-pill,
   .os-tab-button {
-    padding: 0.6rem 0.75rem;
+    transform: none !important;
   }
 }

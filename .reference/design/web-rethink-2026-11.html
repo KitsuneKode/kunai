@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kunai web rethink</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500&family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --well:#060605; --ground:#0b0b0a; --band:#0e0e0d;
+  --raise-1:#131311; --raise-2:#1b1b19; --raise-3:#252522;
+  --text-1:#f5f3ee; --text-2:#cbc8c0; --text-3:#a5a29a; --text-4:#8a877f;
+  --hair:rgb(255 250 240 / .07); --hair-strong:rgb(255 250 240 / .12);
+  --sakura:#ff8fb0; --anime:#d885f1; --series:#4ad0cf; --movie:#ebc95c; --yt:#5fb6ff;
+  --ease-out:cubic-bezier(.23,1,.32,1);
+  --serif:"Cormorant Garamond",Georgia,serif; --sans:"Outfit",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+  --text-body:15px; --text-sm:13px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--well);color:var(--text-1);font:400 var(--text-body)/1.6 var(--sans)}
+.wrap{max-width:1240px;margin:0 auto;padding:48px 16px 96px}
+h1.board{font:500 40px/1.05 var(--serif);letter-spacing:-.02em;margin:0 0 8px}
+.lede{color:var(--text-3);max-width:65ch;margin:0 0 40px}
+h2{font:500 28px/1.15 var(--serif);letter-spacing:-.01em;margin:64px 0 16px}
+.cap{color:var(--text-4);font-size:var(--text-sm);margin:10px 0 0}
+
+/* ---------- proposed hero mock ---------- */
+.frame{border-radius:18px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--hair-strong),0 30px 80px -30px #000;background:var(--ground);position:relative;height:760px}
+.frame::before{content:"";position:absolute;inset:0 0 auto;height:420px;background:radial-gradient(60% 70% at 50% 0%,color-mix(in oklab,var(--sakura) 9%,transparent),transparent 70%);pointer-events:none}
+.nav{position:relative;display:flex;align-items:center;gap:28px;padding:22px 40px}
+.brand{display:flex;align-items:center;gap:10px;font:600 20px/1 var(--sans);letter-spacing:-.01em}
+.brand i{width:26px;height:26px;border-radius:8px;background:var(--sakura);display:inline-block;mask:radial-gradient(circle at 50% 60%,#000 58%,transparent 60%)}
+.nav a{color:var(--text-3);text-decoration:none;font-size:14px}
+.nav .sp{flex:1}
+.nav .kbd{font:500 12px var(--mono);color:var(--text-3);border:1px solid var(--hair-strong);border-radius:8px;padding:6px 10px}
+.hero{position:relative;text-align:center;padding:56px 24px 0}
+.hero h1{font:400 clamp(56px,6.2vw,88px)/.98 var(--serif);letter-spacing:-.035em;margin:0 auto;max-width:15ch}
+.hero h1 em{font-style:normal;color:var(--sakura)}
+.hero p{color:var(--text-2);margin:20px auto 0;max-width:46ch}
+.cmd{display:inline-flex;align-items:center;gap:14px;margin-top:28px;padding:12px 12px 12px 18px;border-radius:14px;background:var(--well);box-shadow:inset 0 0 0 1px var(--hair-strong);font:400 14px var(--mono);color:var(--text-2)}
+.cmd b{color:var(--sakura);font-weight:400}
+.cmd button{font:500 13px var(--sans);color:var(--text-1);background:var(--raise-3);border:0;border-radius:9px;padding:8px 14px;cursor:pointer;transition:transform 140ms var(--ease-out)}
+.cmd button:active{transform:scale(.97)}
+.os{display:block;margin-top:12px;color:var(--text-4);font-size:var(--text-sm)}
+.os a{color:var(--text-3)}
+.stage{position:absolute;left:50%;transform:translateX(-50%);bottom:-196px;width:min(980px,92%);height:360px;border-radius:16px;background:linear-gradient(180deg,var(--raise-2),var(--raise-1));box-shadow:inset 0 0 0 1px var(--hair-strong),0 -20px 60px -20px color-mix(in oklab,var(--sakura) 18%,transparent)}
+.bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--hair)}
+.bar span{width:10px;height:10px;border-radius:50%;background:var(--raise-3)}
+.bar em{font:400 12px var(--mono);color:var(--text-4);font-style:normal;margin-left:8px}
+.lanes{display:flex;gap:6px;margin-left:auto}
+.lanes b{font:500 12px var(--sans);color:var(--text-3);padding:4px 10px;border-radius:99px}
+.lanes b.on{background:var(--raise-3);color:var(--text-1)}
+.lanes b::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;background:var(--c)}
+.term{padding:18px 22px;font:400 13px/1.9 var(--mono);color:var(--text-3);text-align:left}
+.term .p{color:var(--sakura)} .term .ok{color:var(--series)} .term .t{color:var(--text-1)}
+.scrub{margin:6px 22px 0;height:3px;border-radius:3px;background:var(--raise-3);position:relative}
+.scrub::after{content:"";position:absolute;inset:0 38% 0 0;border-radius:3px;background:var(--sakura)}
+.fold{position:absolute;left:0;right:0;top:680px;border-top:1px dashed color-mix(in oklab,var(--sakura) 45%,transparent)}
+.fold span{position:absolute;right:16px;top:-22px;font:500 12px var(--mono);color:var(--sakura)}
+
+/* ---------- before/after strip ---------- */
+.cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:20px}
+.card{background:var(--raise-1);border-radius:14px;padding:20px 22px;box-shadow:inset 0 0 0 1px var(--hair)}
+.card h3{font:600 var(--text-body)/1.3 var(--sans);margin:0 0 8px}
+.card p,.card li{color:var(--text-2);margin:0}
+.card ul{margin:0;padding-left:18px}
+.card li+li{margin-top:6px}
+
+/* ---------- proposals ---------- */
+.props{counter-reset:p;display:grid;gap:12px}
+.prop{display:grid;grid-template-columns:44px minmax(0,1fr);gap:4px 16px;background:var(--raise-1);border-radius:14px;padding:18px 20px;box-shadow:inset 0 0 0 1px var(--hair)}
+.prop::before{counter-increment:p;content:counter(p);grid-row:span 3;font:500 28px/1 var(--serif);color:var(--sakura)}
+.prop h3{font:600 var(--text-body)/1.35 var(--sans);margin:0}
+.prop p{margin:0;color:var(--text-2)}
+.meta{font-size:var(--text-sm);color:var(--text-4)}
+.meta a{color:var(--text-3)}
+.meta code{font:400 12.5px var(--mono);color:var(--text-3)}
+table{width:100%;border-collapse:collapse;font-size:var(--text-sm)}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{color:var(--text-3);font-weight:500}
+td{color:var(--text-2)}
+td code{font:400 12.5px var(--mono);color:var(--text-1)}
+.scroll{overflow-x:auto}
+@media (max-width:760px){.frame{height:auto;padding-bottom:220px}.stage{bottom:-120px}.nav a:not(.brand){display:none}.fold{display:none}}
+@media (prefers-reduced-motion:reduce){.cmd button{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="board">Kunai website rethink</h1>
+  <p class="lede">An audit of the Sumi &amp; Sakura redesign (#760) against the four galleries you sent, done in a live browser. The identity stays: sumi ink, sakura, Kanna and the terminal. What changes is the order and how disciplined the type is, so the product shows up on the first screen.</p>
+
+  <h2>Proposed first screen (1440×900)</h2>
+  <div class="frame" role="img" aria-label="Mockup of the proposed Kunai hero">
+    <div class="nav">
+      <span class="brand"><i></i>Kunai</span>
+      <a href="#">Docs</a><a href="#">Releases</a><a href="#">Analytics</a><a href="#">Support</a>
+      <span class="sp"></span><span class="kbd">Search · Ctrl K</span>
+    </div>
+    <div class="hero">
+      <h1>Anime, movies and YouTube, <em>played from your terminal.</em></h1>
+      <p>Find a title, Kunai picks a source that actually plays and hands it to mpv. No browser tabs.</p>
+      <div class="cmd"><span><b>$</b> curl -fsSL https://kunai.kitsunekode.in/install.sh | bash</span><button type="button">Copy</button></div>
+      <span class="os">Linux, macOS and Termux. <a href="#">Windows</a> · <a href="#">npm</a></span>
+    </div>
+    <div class="fold"><span>fold at 900px</span></div>
+    <div class="stage" aria-hidden="true">
+      <div class="bar"><span></span><span></span><span></span><em>kunai · kitty</em>
+        <div class="lanes"><b class="on" style="--c:var(--anime)">Anime</b><b style="--c:var(--series)">Series</b><b style="--c:var(--movie)">Movies</b><b style="--c:var(--yt)">YouTube</b></div>
+      </div>
+      <div class="term">
+        <div><span class="p">›</span> <span class="t">/anime Frieren</span></div>
+        <div>  resolving · HiAnime, KickAssAnime, AllManga <span class="ok">racing</span></div>
+        <div>  probed HiAnime · 1080p HLS · subtitles en <span class="ok">✓ plays</span></div>
+        <div>  → mpv · Episode 12 · resume at 18:42</div>
+      </div>
+      <div class="scrub"></div>
+    </div>
+  </div>
+  <p class="cap">The terminal stage rises above the fold, so the product is visible in the first second. The scene cards move into the stage's lane tabs, and there is one primary action: the install command.</p>
+
+  <h2>Measured on the current page</h2>
+  <div class="cmp">
+    <div class="card"><h3>Desktop, 1440×900</h3><ul>
+      <li>The terminal preview starts at <b>1065px</b>, entirely below the fold. The first screen is a headline about a product you can't see.</li>
+      <li>The hero carries four kinds of action: a scene-card deck, an install box, two buttons, and a spec strip (v0.3.0 · 11 providers · npm · MIT).</li>
+      <li><b>21 distinct font sizes</b> on one page, including fractions such as 10.56, 10.88, 11.2, 11.52 and 12.48px.</li>
+      <li>Twelve text runs below 13px above the fold (the scene cards, 12px mono).</li>
+      <li>The nav has 8 links (Debug and Disclaimer among them), and the wordmark is the same size as the links.</li>
+    </ul></div>
+    <div class="card"><h3>Phone, 390×844</h3><ul>
+      <li>The page is <b>13,120px</b> long (9,218px on desktop) across eight sections.</li>
+      <li>The install steps were 514px wide in a 366px column, so the Copy buttons were cut off. <b>Fixed and pushed</b> (99208ad86).</li>
+      <li>The stage starts at 926px, just below the fold. The headline is 44px.</li>
+      <li>Everything else fits: no horizontal page scroll.</li>
+    </ul></div>
+  </div>
+
+  <h2>Ranked proposals</h2>
+  <div class="props">
+    <div class="prop"><h3>Put the product on the first screen</h3>
+      <p>Order the hero as headline, one line, install command, then the terminal stage rising above the fold (as mocked above). Merge the four scene cards into the stage's lane tabs instead of a deck above the headline. Drop the second button and move the spec strip to the open-source section.</p>
+      <p class="meta"><code>home-page-shell.tsx</code>, <code>hero-scene-ribbon.tsx</code>, <code>home-terminal-island.tsx</code> · Effort M · References: <a href="https://vibrant.design/website/vh8jpnc-agno-s-hero-section">Agno</a> and <a href="https://vibrant.design/website/uza9hmy-dia-s-hero-section">Dia</a> on Vibrant (real product UI rising into the first screen); <a href="https://imageory.in/">Imageory</a> (centred headline over one row of media at the fold).</p></div>
+    <div class="prop"><h3>Three body sizes, one scale</h3>
+      <p>Replace the 21 sizes with tokens: <code>--text-body: 15px</code>, <code>--text-sm: 13px</code>, mono at 13px. The h1 and the wordmark are exempt. Nothing under 13px above the fold.</p>
+      <p class="meta"><code>app/styles/typography.css</code>, <code>home.css</code> · Effort M · Risk: touches every section, so check it in a browser pass.</p></div>
+    <div class="prop"><h3>A five-link nav with a stronger wordmark</h3>
+      <p>Docs, Releases, Analytics, Support, plus search. Move Debug under Docs, Disclaimer to the footer, and Install to the hero anchor. Set the wordmark at 20px/600 against 14px links.</p>
+      <p class="meta"><code>app/layout.config.tsx</code>, <code>nav-compact.tsx</code> · Effort S</p></div>
+    <div class="prop"><h3>Show the real pipeline as steps that tick</h3>
+      <p>Replace "From search to mpv in three steps" with four true stages: search, providers race, stream probed, mpv. Each ticks once when it scrolls into view. This is what Kunai does that a browser can't, and the probe step is the honest differentiator.</p>
+      <p class="meta"><code>components/home/*steps*</code> · Effort M · References: <a href="https://kokonutui.com/docs/ai/ai-loading">Agent steps</a> and <a href="https://smoothui.dev/docs/components/ai-task-list">Task list</a> via <a href="https://designbookmark.com/motion">DesignBookmark Motion</a>.</p></div>
+    <div class="prop"><h3>A resume scrubber under the stage</h3>
+      <p>A 3px sakura progress line at the bottom of the terminal stage, drawn once on view to "resume at 18:42". It makes resume and history visible without a feature card.</p>
+      <p class="meta"><code>terminal-simulator.tsx</code> · Effort S · Reference: <a href="https://smoothui.dev/docs/components/scrubber">SmoothUI Scrubber</a> via DesignBookmark.</p></div>
+    <div class="prop"><h3>One scroll-revealed statement</h3>
+      <p>A single large serif sentence between the stage and the providers that brightens word by word as it scrolls: "Kunai finds a stream that actually plays, checks it, and hands it to mpv." Use CSS <code>animation-timeline: view()</code>, with static full-opacity text under reduced motion or no support.</p>
+      <p class="meta">New <code>home-statement.tsx</code> · Effort S · Reference: <a href="https://imageory.in/">Imageory</a> (word-by-word reveal paragraph).</p></div>
+    <div class="prop"><h3>Shorten the page by two sections</h3>
+      <p>Fold "Everything stays one keystroke away" into the stage (the keys are already there) and move "More from the same workshop" to a footer link. That leaves six sections, about 7k px on desktop.</p>
+      <p class="meta"><code>home-page-shell.tsx</code>, <code>home-bento.tsx</code>, <code>workshop-showcase.tsx</code> · Effort S</p></div>
+    <div class="prop"><h3>A giant wordmark footer with Kanna on the K</h3>
+      <p>"kunai" set in Cormorant at about 22vw, sumi on sumi (raise-2 on well), with Kanna sitting on the K. It's the one decorative brand moment, placed where it costs nothing.</p>
+      <p class="meta"><code>components/layout/site-footer.tsx</code> · Effort S · Reference: <a href="https://imageory.in/">Imageory</a> footer.</p></div>
+    <div class="prop"><h3>A 404 that teaches /recover</h3>
+      <p>"Stream not found." Kanna asleep on a terminal showing <code>/recover</code> and <code>/fallback</code>, which link back to Docs and Home.</p>
+      <p class="meta"><code>app/not-found.tsx</code> · Effort S · Reference: Keshav's 404 on <a href="https://designeer.xyz/finds/kshvbgde-2116148492259451028">Designeer</a>.</p></div>
+    <div class="prop"><h3>An ASCII idle state for the stage</h3>
+      <p>While the simulator chunk loads, render Kanna in ASCII inside the static frame instead of an empty pane. It's on-brand for a terminal tool and costs no images.</p>
+      <p class="meta"><code>home-terminal-static.tsx</code> · Effort M · Reference: Raunak's ASCII effects on <a href="https://designeer.xyz/finds/skirook-2121958017327591908">Designeer</a>.</p></div>
+  </div>
+
+  <h2>Motion spec</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Animation</th><th>Purpose</th><th>Seen</th><th>Timing</th><th>Reduced motion</th></tr></thead>
+    <tbody>
+      <tr><td>Stage rises into place</td><td>Shows the product is the point</td><td>Once per visit</td><td><code>translateY(24px)→0, opacity, 320ms var(--ease-out)</code></td><td>Opacity only, 150ms</td></tr>
+      <tr><td>Pipeline steps tick</td><td>Explains the resolve flow</td><td>Once, on view</td><td><code>opacity + translateY(6px), 200ms, 60/50/40ms stagger</code></td><td>All visible, no stagger</td></tr>
+      <tr><td>Resume scrubber draws</td><td>States the resume feature</td><td>Once, on view</td><td><code>scaleX 0→1, 600ms linear</code> (progress is constant motion)</td><td>Drawn at rest</td></tr>
+      <tr><td>Statement reveal</td><td>Paces the one claim</td><td>Scroll-linked</td><td><code>animation-timeline: view()</code>, opacity .25→1 per word</td><td>Static, full opacity</td></tr>
+      <tr><td>Copy button press</td><td>Feedback</td><td>Often</td><td><code>scale(.97), 140ms var(--ease-out)</code></td><td>No scale</td></tr>
+      <tr><td>Lane tab change by keyboard</td><td>None</td><td>Often</td><td>No animation</td><td>Same</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>What not to take</h2>
+  <div class="cmp">
+    <div class="card"><ul>
+      <li>Modal's neon wireframe cube and Aceternity-style beams and spotlights: generic AI-infra glow.</li>
+      <li>Imageory's pastel painted imagery: we're a terminal tool, not an image library.</li>
+      <li>Liquid glass and refraction cards (several DesignBookmark and Vibrant entries): they fight the flat sumi surfaces.</li>
+    </ul></div>
+    <div class="card"><ul>
+      <li>Logo clouds and testimonial walls: Kunai has no customers to list, and inventing them would be dishonest.</li>
+      <li>Pricing-style sponsor tiers above the fold: sponsorship stays in Support.</li>
+      <li>Big stat counters. "11 direct providers" belongs in a sentence, not a KPI strip.</li>
+    </ul></div>
+  </div>
+</div>
+</body>
+</html>
