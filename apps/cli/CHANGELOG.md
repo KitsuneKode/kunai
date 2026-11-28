@@ -70,6 +70,10 @@ persistence, downloads and native installation.
   Discover gets personal rails from AniList.
 - Connecting a tracker turns its sync on and disconnecting turns it off.
   Trackers' `Retry-After` is honoured across batches.
+- A TMDB mirror that refuses or stalls no longer holds up catalog lookups:
+  Kunai moves on to direct TMDB within a short budget and never sends your key
+  to a mirror. A slower earlier request can no longer undo a refresh, and a
+  failed season or recommendation lookup is not cached as an empty answer.
 
 ### Playback and providers
 
@@ -172,6 +176,10 @@ persistence, downloads and native installation.
   `kunai addons disable` stops addon use at the next resolve and keeps the
   installed list. Only direct video files are supported; downloads and
   Android handoff do not use addons. Full addon URLs are never shown or logged.
+- When playback never starts, Kunai shows the playback-issue panel with the
+  reason and recovery keys instead of opening Tracks. A provider switch names
+  the provider it left and the one it moved to, and where playback will resume.
+  The header says Resolving until the player is actually running.
 
 ### Search and terminal interaction
 
@@ -204,6 +212,14 @@ persistence, downloads and native installation.
   `results own keys · Esc search` instead of silently ignoring what you type.
 - A failed playback shows one `Next` line between the cause and the evidence:
   the key to press, or the install command for this machine.
+- The command palette ranks exact and prefix matches first, so `/sm` jumps to a
+  queued title that starts with "sm", and a query that matches nothing offers
+  `Search catalog for …` in the current mode. "Where to start?" is a short
+  action list without a filter box.
+- Browse, the palette, the header and post-play fit 40-column terminals. Empty
+  lists no longer show keys that do nothing, the details sheet, Calendar
+  failures and Tracks read cleanly at every width, and `kunai doctor` lists
+  errors first.
 
 ### State safety and privacy
 
@@ -319,6 +335,9 @@ persistence, downloads and native installation.
   completed at their final episode, and handle hardware next/previous media keys.
 - Send macOS Keychain writes through stdin. Check that the Windows vault can
   store, retrieve and delete a probe before using it. Report a file fallback.
+- On Windows, a native install whose data folder is named `data` starts
+  normally instead of being mistaken for a dedicated profile. A layout Kunai
+  cannot classify explains how to fix it.
 
 ### Known issues
 
