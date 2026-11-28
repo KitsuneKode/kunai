@@ -3080,6 +3080,24 @@ describePwsh("install.ps1 dedicated profile contract", () => {
     }
   });
 
+  test("a profile dry run for a pre-0.4.0 payload is refused with exit 2", () => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-old", { freshProfile: true });
+    try {
+      const result = runInstallPs1(
+        ["-DryRun", "-Yes", "-SkipDeps", "-Version", "0.3.9"],
+        profileOnlyInstallerEnv(sandbox.env),
+      );
+      expect(result.status).toBe(2);
+      expect(`${result.stdout}${result.stderr}`).toContain(
+        "Windows profile installs require Kunai 0.4.0 or later.",
+      );
+      expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+      expect(existsSync(join(sandbox.profileDir, "config", "install.json"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("a KUNAI_BIN_DIR outside the profile is refused before any write", () => {
     const sandbox = createInstallerSandbox("install-ps1-profile-extbin", {
       freshProfile: true,
@@ -3366,20 +3384,24 @@ describePwsh("install.ps1 dedicated profile contract", () => {
               KUNAI_RELEASES_API: `${baseUrl}/latest`,
             };
             // Prove the wrapper binds its own profile without KUNAI_CONFIG_DIR
-            // in the invoking shell: temporarily put a runnable binary in the
-            // version store (the fixture ships MZ placeholder bytes) and run a
-            // JS probe through it. The probe lives outside the profile.
-            const probe = join(sandbox.root, "profile probe.js");
-            writeFileSync(
-              probe,
+            // in the invoking shell: the version store payload is the compiled
+            // probe fixture, which exercises prepareCliProfile's own inference.
+            const probe = join(sandbox.root, "profile-probe.exe");
+            const compiled = Bun.spawnSync(
               [
-                'import { renameSync, writeSync } from "node:fs";',
-                "const { KUNAI_TEST_PROFILE_LAUNCHER: launcher, KUNAI_TEST_MOVED_LAUNCHER: moved } = process.env;",
-                "if (moved) renameSync(launcher, moved);",
-                'writeSync(1, JSON.stringify({ profile: process.env.KUNAI_CONFIG_DIR, args: process.argv.slice(2) }) + "\\n");',
-                "process.exit(37);",
-              ].join("\n") + "\n",
+                process.execPath,
+                "build",
+                join(
+                  REPO_ROOT,
+                  "apps/cli/test/integration/fixtures/windows-profile-launcher-probe.ts",
+                ),
+                "--compile",
+                "--outfile",
+                probe,
+              ],
+              { env, stdout: "pipe", stderr: "pipe" },
             );
+            expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
             // A CALL through a calling batch must also survive the rename: the
             // caller continues only if the launcher returns the payload status
             // without popping the caller's own batch context.
@@ -3402,9 +3424,14 @@ describePwsh("install.ps1 dedicated profile contract", () => {
               version: string,
               originalBody: string,
               launcherEnv: NodeJS.ProcessEnv,
-              replaceLauncher = false,
-              fromBatch = false,
+              options: {
+                rename?: boolean;
+                fromBatch?: boolean;
+                status?: number;
+                explicitProfile?: string;
+              } = {},
             ) => {
+              const { rename = false, fromBatch = false, status = 37, explicitProfile } = options;
               const versionedPath = join(
                 sandbox.profileDir,
                 "data",
@@ -3413,23 +3440,24 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                 "kunai.exe",
               );
               const movedLauncher = `${launcher}.probe-renamed`;
-              copyFileSync(process.execPath, versionedPath);
+              copyFileSync(probe, versionedPath);
               try {
                 const wrapperEnv: NodeJS.ProcessEnv = {
                   ...launcherEnv,
                   KUNAI_TEST_PROFILE_LAUNCHER: launcher,
-                  KUNAI_TEST_PROFILE_PROBE: probe,
                   KUNAI_TEST_PROFILE_ENTRYPOINT: fromBatch ? caller : launcher,
-                  KUNAI_TEST_MOVED_LAUNCHER: replaceLauncher ? movedLauncher : "",
+                  KUNAI_TEST_MOVED_LAUNCHER: rename ? movedLauncher : "",
+                  KUNAI_TEST_PROFILE_STATUS: String(status),
                   ERRORLEVEL: "123",
                 };
-                delete wrapperEnv.KUNAI_CONFIG_DIR;
+                if (explicitProfile === undefined) delete wrapperEnv.KUNAI_CONFIG_DIR;
+                else wrapperEnv.KUNAI_CONFIG_DIR = explicitProfile;
                 const wrapped = Bun.spawn(
                   [
                     PWSH_PATH,
                     "-NoProfile",
                     "-Command",
-                    "& $env:KUNAI_TEST_PROFILE_ENTRYPOINT run $env:KUNAI_TEST_PROFILE_PROBE 'plain(parentheses)' 'quoted & argument' 'literal!KUNAI_CONFIG_DIR!' ; exit $LASTEXITCODE",
+                    "& $env:KUNAI_TEST_PROFILE_ENTRYPOINT 'plain(parentheses)' 'quoted & argument' 'literal!KUNAI_CONFIG_DIR!' ; exit $LASTEXITCODE",
                   ],
                   { env: wrapperEnv, stdout: "pipe", stderr: "pipe" },
                 );
@@ -3439,16 +3467,16 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                   wrapped.exited,
                 ]);
                 expect(wrappedStatus, `stdout: ${wrappedStdout}\nstderr: ${wrappedStderr}`).toBe(
-                  37,
+                  status,
                 );
                 const [json, ...continuation] = wrappedStdout.trim().split(/\r?\n/);
                 expect(continuation).toEqual(fromBatch ? ["caller continued"] : []);
                 expect(JSON.parse(json ?? "")).toEqual({
-                  profile: sandbox.profileDir,
+                  profile: explicitProfile ?? sandbox.profileDir,
                   args: ["plain(parentheses)", "quoted & argument", "literal!KUNAI_CONFIG_DIR!"],
                 });
                 expect(wrappedStderr).toBe("");
-                expect(existsSync(movedLauncher)).toBe(replaceLauncher);
+                expect(existsSync(movedLauncher)).toBe(rename);
               } finally {
                 if (existsSync(movedLauncher)) renameSync(movedLauncher, launcher);
                 writeFileSync(versionedPath, originalBody);
@@ -3467,7 +3495,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
             // competing .exe in the profile bin.
             expect(existsSync(join(sandbox.profileDir, "bin", "kunai.exe"))).toBe(false);
 
-            await assertProfileLauncher("9.8.7", v1Body, env);
+            await assertProfileLauncher("9.8.7", v1Body, env, { status: 0 });
 
             const sibling = join(sandbox.profileDir, "keep-me.txt");
             writeFileSync(sibling, "unrelated\n");
@@ -3480,8 +3508,41 @@ describePwsh("install.ps1 dedicated profile contract", () => {
             const manifest = readInstallerManifest(sandbox.configDir);
             expect(manifest.activeVersion).toBe("9.8.8");
 
-            await assertProfileLauncher("9.8.8", v2Body, env, true);
-            await assertProfileLauncher("9.8.8", v2Body, env, true, true);
+            await assertProfileLauncher("9.8.8", v2Body, env, { rename: true });
+            await assertProfileLauncher("9.8.8", v2Body, env, { rename: true, fromBatch: true });
+
+            // An explicit KUNAI_CONFIG_DIR still takes precedence over the
+            // payload's inferred profile.
+            const explicitProfile = join(sandbox.root, "explicit-profile");
+            mkdirSync(explicitProfile);
+            writeFileSync(join(explicitProfile, ".kunai-profile"), "kunai-profile-v1\n");
+            await assertProfileLauncher("9.8.8", v2Body, env, { explicitProfile });
+
+            // A launcher whose payload is gone must fail nonzero and silent —
+            // never fall back to the default profile.
+            const activePath = join(sandbox.profileDir, "data", "versions", "9.8.8", "kunai.exe");
+            const savedPath = `${activePath}.probe-saved`;
+            renameSync(activePath, savedPath);
+            try {
+              const missingEnv: NodeJS.ProcessEnv = {
+                ...env,
+                KUNAI_TEST_PROFILE_ENTRYPOINT: launcher,
+              };
+              delete missingEnv.KUNAI_CONFIG_DIR;
+              const missing = Bun.spawnSync(
+                [
+                  PWSH_PATH,
+                  "-NoProfile",
+                  "-Command",
+                  "& $env:KUNAI_TEST_PROFILE_ENTRYPOINT; exit $LASTEXITCODE",
+                ],
+                { env: missingEnv, stdout: "pipe", stderr: "pipe" },
+              );
+              expect(missing.exitCode, missing.stderr.toString()).not.toBe(0);
+              expect(missing.stdout.toString().trim()).toBe("");
+            } finally {
+              renameSync(savedPath, activePath);
+            }
 
             const uninstall = await runKunai(["uninstall", "--purge"], env);
             expect(uninstall.status, `${uninstall.stdout}--ERR--${uninstall.stderr}`).toBe(0);

@@ -244,6 +244,47 @@ function checkProfileOwnership(
   }
 }
 
+/** Infer the Windows profile only from a real payload in its owned version store. */
+export function inferWindowsProfileFromExecutable(
+  executablePath = process.execPath,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (process.platform !== "win32" || env.KUNAI_CONFIG_DIR !== undefined) return;
+  const match = /^(.+[\\/])data[\\/]versions[\\/]([^\\/]+)[\\/]kunai\.exe$/i.exec(
+    win32Path.normalize(executablePath),
+  );
+  const root = match?.[1];
+  const version = match?.[2];
+  if (!root || !version) return;
+  const profileEnv = { ...env, KUNAI_CONFIG_DIR: root };
+  const badExecutable = () =>
+    new DesktopProfileError(root, "does not contain a regular versioned Kunai executable");
+  try {
+    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+      throw badExecutable();
+    }
+    const { profileDir } = getKunaiPaths({ platform: "win32", env: profileEnv });
+    if (!profileDir) throw badExecutable();
+    checkProfileOwnership(profileDir, "require", "win32", profileEnv);
+    const versions = win32Path.join(profileDir, "data", "versions");
+    if (
+      !lstatSync(versions).isDirectory() ||
+      !lstatSync(win32Path.join(versions, version)).isDirectory() ||
+      !lstatSync(executablePath).isFile()
+    )
+      throw badExecutable();
+    const physicalRoot = realpathSync.native(profileDir);
+    const expected = win32Path.join(physicalRoot, "data", "versions", version, "kunai.exe");
+    if (win32Path.relative(expected, realpathSync.native(executablePath)) !== "") {
+      throw badExecutable();
+    }
+    return physicalRoot;
+  } catch (error) {
+    if (error instanceof DesktopProfileError) throw error;
+    throw badExecutable();
+  }
+}
+
 function normalizePlatform(platform: NodeJS.Platform): StoragePlatform {
   if (platform === "darwin" || platform === "win32") {
     return platform;

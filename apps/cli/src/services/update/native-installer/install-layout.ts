@@ -333,3 +333,17 @@ export function parseVersionFromExecPath(
   const segment = rest.split("/")[0];
   return segment ? parseCanonicalVersion(segment) : null;
 }
+
+/**
+ * Whether a resolved version may be activated into this layout's profile.
+ * Windows profile launchers carry no environment — the versioned executable
+ * must infer its profile from its own location, which only Kunai 0.4.0+
+ * supports; older payloads could silently fall back to the default profile.
+ */
+export function canActivateProfileVersion(layout: InstallLayoutPaths, version: string): boolean {
+  return (
+    layout.profileDir === undefined ||
+    layout.binaryFileName !== "kunai.exe" ||
+    !/^0\.[0-3]\./.test(version)
+  );
+}

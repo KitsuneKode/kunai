@@ -1739,17 +1739,8 @@ function Update-Launcher([string]$VersionPath, [string]$LauncherPath, [string]$V
       # the active versioned payload — byte-identical to the one the native
       # installer writes so uninstall ownership checks recognize it.
       $candidate = "$LauncherPath.new.$PID"
-      $lines = @(
-        '@echo off',
-        'setlocal EnableExtensions DisableDelayedExpansion',
-        'for %%I in ("%~dp0..") do set "KUNAI_CONFIG_DIR=%%~fI"',
-        'set "ERRORLEVEL="',
-        'set __KUNAI_LAUNCHER_ARGS=%*',
-        'setlocal EnableDelayedExpansion',
-        ('(goto) 2>nul & "!KUNAI_CONFIG_DIR!\data\versions\{0}\kunai.exe" !__KUNAI_LAUNCHER_ARGS! & "%ComSpec%" /d /c exit !ERRORLEVEL!' -f $Ver),
-        ''
-      )
-      Write-Utf8File $candidate ($lines -join "`r`n")
+      $line = ('@(goto) 2>nul & "%~dp0..\data\versions\{0}\kunai.exe" %*' -f $Ver)
+      Write-Utf8File $candidate ($line + "`r`n")
     }
     if (Test-Path -LiteralPath $LauncherPath) {
       $aside = "$LauncherPath.old.$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
@@ -2469,6 +2460,8 @@ function Install-Binary {
   $arch = Get-WindowsArch
   $asset = Get-ReleaseAssetName -Arch $arch
   $resolved = Resolve-PublishedVersion
+  if ($ProfileDir -and $resolved -match '^0\.[0-3]\.') { Stop-ProfileInstall 'Windows profile installs require Kunai 0.4.0 or later.' }
+  if (-not $DryRun) { Assert-ProfileOwnership }
   $base = "$DlBase/download/v$resolved"
   $versionPath = Join-Path (Join-Path $VersionsDir $resolved) 'kunai.exe'
   $target = "windows-$arch"
@@ -2787,7 +2780,7 @@ if (-not $DryRun -and $OnWindows -and -not ($env:KUNAI_INSTALL_ALLOW_ELEVATED -m
 if ($null -ne $ProfileDir -and $Method -ne 'binary') {
   Stop-ProfileInstall "KUNAI_CONFIG_DIR only supports -Method binary; unset KUNAI_CONFIG_DIR for -Method $Method."
 }
-if ($DryRun) { Assert-ProfileFilesystem } else { Assert-ProfileOwnership }
+Assert-ProfileFilesystem
 
 Write-Host 'Kunai installer' -ForegroundColor Cyan
 

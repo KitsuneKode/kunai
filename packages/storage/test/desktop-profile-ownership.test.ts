@@ -4,14 +4,22 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-import { checkDesktopProfile, PROFILE_MARKER, PROFILE_MARKER_CONTENT } from "../src/paths";
+import {
+  checkDesktopProfile,
+  DesktopProfileError,
+  inferWindowsProfileFromExecutable,
+  PROFILE_MARKER,
+  PROFILE_MARKER_CONTENT,
+} from "../src/paths";
 
 /**
  * On-disk ownership checks behind `checkDesktopProfile` — the same contract
@@ -159,5 +167,110 @@ describe("checkDesktopProfile ownership", () => {
       if (xdgSaved === undefined) delete process.env.XDG_CONFIG_HOME;
       else process.env.XDG_CONFIG_HOME = xdgSaved;
     }
+  });
+});
+
+/**
+ * Windows-only profile inference: a payload running out of an owned profile's
+ * version store resolves that profile without an override. Everything here is
+ * a throwaway root under the temp dir — nothing touches a live profile.
+ */
+describe.skipIf(process.platform !== "win32")("inferWindowsProfileFromExecutable", () => {
+  const roots: string[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  const makeEnv = (home: string): NodeJS.ProcessEnv => ({
+    HOME: home,
+    USERPROFILE: home,
+    APPDATA: join(home, "appdata"),
+    LOCALAPPDATA: join(home, "localappdata"),
+  });
+
+  const makeFixture = (profileName = "profile") => {
+    const parent = mkdtempSync(join(tmpdir(), "kunai-infer-"));
+    roots.push(parent);
+    const profile = join(parent, profileName);
+    const exe = join(profile, "data", "versions", "1.2.3", "kunai.exe");
+    mkdirSync(dirname(exe), { recursive: true });
+    writeFileSync(exe, "MZ placeholder\n");
+    writeFileSync(join(profile, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
+    return { parent, profile, exe, env: makeEnv(parent) };
+  };
+
+  test("infers the canonical profile root from an owned versioned executable", () => {
+    const { profile, exe, env } = makeFixture();
+    expect(inferWindowsProfileFromExecutable(exe, env)).toBe(realpathSync.native(profile));
+    expect(env.KUNAI_CONFIG_DIR).toBeUndefined();
+  });
+
+  test("refuses an unmarked root and creates nothing", () => {
+    const { profile, exe, env } = makeFixture();
+    rmSync(join(profile, PROFILE_MARKER));
+    expect(() => inferWindowsProfileFromExecutable(exe, env)).toThrow(DesktopProfileError);
+    expect(existsSync(join(profile, PROFILE_MARKER))).toBe(false);
+  });
+
+  test("refuses a marker with different bytes", () => {
+    const { profile, exe, env } = makeFixture();
+    writeFileSync(join(profile, PROFILE_MARKER), "not-the-marker\n");
+    expect(() => inferWindowsProfileFromExecutable(exe, env)).toThrow(DesktopProfileError);
+  });
+
+  test("refuses a marker that is a junction, not a file", () => {
+    const { parent, profile, exe, env } = makeFixture();
+    const target = join(parent, "marker-target");
+    mkdirSync(target, { recursive: true });
+    rmSync(join(profile, PROFILE_MARKER));
+    symlinkSync(target, join(profile, PROFILE_MARKER), "junction");
+    expect(() => inferWindowsProfileFromExecutable(exe, env)).toThrow(DesktopProfileError);
+  });
+
+  test("refuses a junctioned versions directory", () => {
+    const { parent, profile, exe, env } = makeFixture();
+    const versions = join(profile, "data", "versions");
+    const target = join(parent, "versions-target");
+    renameSync(versions, target);
+    symlinkSync(target, versions, "junction");
+    expect(() => inferWindowsProfileFromExecutable(exe, env)).toThrow(DesktopProfileError);
+  });
+
+  test("an executable outside a version store returns undefined", () => {
+    const { parent, env } = makeFixture();
+    const exe = join(parent, "elsewhere", "kunai.exe");
+    mkdirSync(dirname(exe), { recursive: true });
+    writeFileSync(exe, "MZ placeholder\n");
+    expect(inferWindowsProfileFromExecutable(exe, env)).toBeUndefined();
+  });
+
+  test.each(["", "C:\\elsewhere", "rel/path"])(
+    "an explicit override value (%j) bypasses inference entirely",
+    (value) => {
+      const { profile, exe, env } = makeFixture();
+      env.KUNAI_CONFIG_DIR = value;
+      rmSync(join(profile, PROFILE_MARKER));
+      expect(inferWindowsProfileFromExecutable(exe, env)).toBeUndefined();
+    },
+  );
+
+  test("a hazardous profile root is refused even with a valid marker", () => {
+    // The profile root contains the fake APPDATA\kunai default dir — lexical
+    // overlap is refused before anything could be written.
+    const parent = mkdtempSync(join(tmpdir(), "kunai-infer-"));
+    roots.push(parent);
+    const env = makeEnv(parent);
+    const profile = join(parent, "appdata");
+    const exe = join(profile, "data", "versions", "1.2.3", "kunai.exe");
+    mkdirSync(join(env.APPDATA!, "kunai"), { recursive: true });
+    mkdirSync(dirname(exe), { recursive: true });
+    writeFileSync(exe, "MZ placeholder\n");
+    writeFileSync(join(profile, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
+    expect(() => inferWindowsProfileFromExecutable(exe, env)).toThrow(
+      "overlaps a platform-default Kunai directory",
+    );
   });
 });

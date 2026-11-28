@@ -17,10 +17,20 @@ export async function prepareCliProfile(
   maintenanceCommands: ReadonlySet<string>,
   fastPath: boolean,
 ): Promise<boolean> {
-  if (process.env.KUNAI_CONFIG_DIR === undefined) return true;
-  const { checkDesktopProfile, DesktopProfileError, getKunaiPaths } =
-    await import("@kunai/storage");
+  if (process.env.KUNAI_CONFIG_DIR === undefined && process.platform !== "win32") return true;
+  const {
+    checkDesktopProfile,
+    DesktopProfileError,
+    getKunaiPaths,
+    inferWindowsProfileFromExecutable,
+  } = await import("@kunai/storage");
   try {
+    // A payload running from an owned profile's version store inherits that
+    // profile even when the invoking shell carried no override. Anything the
+    // shell did set — including an empty value — keeps its existing meaning.
+    const inferredRoot = inferWindowsProfileFromExecutable();
+    if (inferredRoot !== undefined) process.env.KUNAI_CONFIG_DIR = inferredRoot;
+    if (process.env.KUNAI_CONFIG_DIR === undefined) return true;
     const command = argv[0] ?? "";
     const maintenance = maintenanceCommands.has(command);
     if (command === "uninstall" || (!maintenance && argv.includes("--install-protocol-handler"))) {

@@ -257,6 +257,28 @@ describe("listRollbackCandidates / planRollback (read-only)", () => {
     expect(await snapshotTree(root)).toEqual(before);
   });
 
+  test("a Windows profile refuses rollback to a payload too old to infer its profile", async () => {
+    const { root, layout } = await makeRoot();
+    const profileLayout = {
+      ...layout,
+      profileDir: root,
+      binaryFileName: "kunai.exe",
+    };
+    await seedVerifiedVersion(profileLayout, "0.3.9", "old");
+    await seedVerifiedVersion(profileLayout, "0.4.0", "new");
+    await seedBinaryManifest(profileLayout, "0.4.0", "0.3.9");
+    const before = await snapshotTree(root);
+
+    expect(await planRollback(profileLayout)).toMatchObject({
+      status: "refused",
+      code: "not-candidate",
+      reason: "Windows profile installs require Kunai 0.4.0 or later.",
+    });
+    // Only the gated payload is filtered; the active 0.4.0 stays eligible.
+    expect((await listRollbackCandidates(profileLayout)).map((c) => c.version)).toEqual(["0.4.0"]);
+    expect(await snapshotTree(root)).toEqual(before);
+  });
+
   test("stale locks remain eligible with lockStatus stale", async () => {
     const { layout } = await makeRoot();
     await seedVerifiedVersion(layout, "1.0.0", "old");

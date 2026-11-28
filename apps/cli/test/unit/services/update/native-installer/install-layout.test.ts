@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
 
 import {
+  canActivateProfileVersion,
   getInstallLayoutPaths,
   isInsideStagingRoot,
   lockFilePath,
@@ -222,6 +223,43 @@ describe("install layout paths", () => {
       expect(explicit.configDir).toBe(`${testCase.configDir}-other`);
       expect(explicit.profileDir).toBeUndefined();
     }
+  });
+
+  test("canActivateProfileVersion gates only Windows profile payloads", () => {
+    const win32Profile = getInstallLayoutPaths({
+      platform: "win32",
+      env: {
+        USERPROFILE: "C:\\Users\\T",
+        APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+        LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+        KUNAI_CONFIG_DIR: "C:\\profile",
+      },
+    });
+    // Windows profiles need a payload that infers its own profile — 0.4.0+.
+    expect(canActivateProfileVersion(win32Profile, "0.3.9")).toBe(false);
+    expect(canActivateProfileVersion(win32Profile, "0.4.0")).toBe(true);
+    expect(canActivateProfileVersion(win32Profile, "1.0.0")).toBe(true);
+
+    const posixProfile = getInstallLayoutPaths({
+      platform: "linux",
+      env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
+    });
+    expect(canActivateProfileVersion(posixProfile, "0.3.9")).toBe(true);
+
+    // Detached and default layouts carry no profile to misattribute.
+    const detached = getInstallLayoutPaths({
+      platform: "win32",
+      env: {
+        USERPROFILE: "C:\\Users\\T",
+        APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+        LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+        KUNAI_CONFIG_DIR: "C:\\profile",
+      },
+      configDir: "C:\\elsewhere\\config",
+      launcherPath: "C:\\elsewhere\\bin\\kunai.exe",
+    });
+    expect(detached.profileDir).toBeUndefined();
+    expect(canActivateProfileVersion(detached, "0.3.9")).toBe(true);
   });
 
   test("default layouts keep an absolute platform launcher and no profile", () => {

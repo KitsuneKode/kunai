@@ -37,6 +37,7 @@ import {
   type FetchLike,
 } from "./download";
 import {
+  canActivateProfileVersion,
   DEFAULT_DL_BASE,
   getInstallLayoutPaths,
   removeStagingAndPruneParents,
@@ -125,6 +126,9 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
       : parseCanonicalVersion((await fetchLatestVersion(fetchImpl)) ?? "");
   if (!resolved) {
     return { status: "failed", error: "Could not resolve target version." };
+  }
+  if (!canActivateProfileVersion(layout, resolved)) {
+    return { status: "failed", error: "Windows profile installs require Kunai 0.4.0 or later." };
   }
 
   const { os, arch } = detectPlatform();

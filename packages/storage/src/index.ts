@@ -21,6 +21,7 @@ export {
   checkDesktopProfile,
   DesktopProfileError,
   getKunaiPaths,
+  inferWindowsProfileFromExecutable,
   joinerFor,
   joinerForNodePlatform,
   PROFILE_MARKER,

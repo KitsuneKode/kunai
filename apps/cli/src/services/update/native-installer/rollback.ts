@@ -11,6 +11,7 @@ import {
 import { parseCanonicalVersion } from "../version";
 import { withActivationLock } from "./activation-lock";
 import {
+  canActivateProfileVersion,
   getInstallLayoutPaths,
   sameInstallLauncherPath,
   versionBinaryPath,
@@ -156,6 +157,8 @@ export async function listRollbackCandidates(
   const candidates: RollbackCandidate[] = [];
 
   for (const version of versions) {
+    // Payloads too old to infer their profile can never be rollback targets.
+    if (!canActivateProfileVersion(layout, version)) continue;
     const verification = await verifyStoredVersion(layout, version);
     if (verification.status !== "verified") continue;
 
@@ -299,6 +302,14 @@ export async function planRollback(
       status: "refused",
       code: "already-active",
       reason: `Version ${targetVersion} is already active`,
+    };
+  }
+
+  if (!canActivateProfileVersion(layout, targetVersion)) {
+    return {
+      status: "refused",
+      code: "not-candidate",
+      reason: "Windows profile installs require Kunai 0.4.0 or later.",
     };
   }
 

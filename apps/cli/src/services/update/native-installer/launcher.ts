@@ -28,19 +28,8 @@ import { parseCanonicalVersion } from "../version";
 function profileLauncherScript(version: string, platform: NodeJS.Platform): string {
   if (!parseCanonicalVersion(version)) throw new Error("Invalid profile launcher version");
   if (platform === "win32") {
-    // Capture arguments before enabling delayed expansion, preserving literal bangs.
-    // Leave the batch context before the payload can rename this file.
-    // A nested cmd returns the status without exiting a calling batch file.
-    return [
-      "@echo off",
-      "setlocal EnableExtensions DisableDelayedExpansion",
-      'for %%I in ("%~dp0..") do set "KUNAI_CONFIG_DIR=%%~fI"',
-      'set "ERRORLEVEL="',
-      "set __KUNAI_LAUNCHER_ARGS=%*",
-      "setlocal EnableDelayedExpansion",
-      `(goto) 2>nul & "!KUNAI_CONFIG_DIR!\\data\\versions\\${version}\\kunai.exe" !__KUNAI_LAUNCHER_ARGS! & "%ComSpec%" /d /c exit !ERRORLEVEL!`,
-      "",
-    ].join("\r\n");
+    // Detach before the payload can rename this batch. The final command's status is returned.
+    return `@(goto) 2>nul & "%~dp0..\\data\\versions\\${version}\\kunai.exe" %*\r\n`;
   }
   return [
     "#!/bin/sh",

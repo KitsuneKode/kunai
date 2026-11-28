@@ -260,6 +260,28 @@ describe("installLatest", () => {
     await expectLauncherPointsTo(layout.launcherPath, versionPath);
   });
 
+  test("a Windows profile refuses a payload too old to infer its profile", async () => {
+    const { root, layout } = await makeLayout();
+    const profileLayout = {
+      ...layout,
+      profileDir: root,
+      binaryFileName: "kunai.exe",
+    };
+    const result = await installLatest({
+      ...releaseFixture(profileLayout, "0.3.9", "explicit"),
+      fetchImpl: async () => {
+        throw new Error("fetch must never run for a gated version");
+      },
+    });
+    expect(result).toEqual({
+      status: "failed",
+      error: "Windows profile installs require Kunai 0.4.0 or later.",
+    });
+    // Nothing was published or claimed: no version store entry, no manifest.
+    expect(existsSync(versionBinaryPath(profileLayout, "0.3.9"))).toBe(false);
+    expect(existsSync(join(profileLayout.configDir, "install.json"))).toBe(false);
+  });
+
   test("rollback can restore the verified version replaced by an upgrade", async () => {
     const { layout } = await makeLayout();
     expect(await installLatest(releaseFixture(layout, "1.0.0", "explicit"))).toMatchObject({
