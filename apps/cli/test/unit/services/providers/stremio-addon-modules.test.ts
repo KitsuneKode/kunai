@@ -5,6 +5,8 @@ import {
   clearTmdbSessionCache,
   setTmdbDurableCache,
   setTmdbUserKeySource,
+  TMDB_ALT_BASE,
+  TMDB_DIRECT_BASE,
 } from "@/services/catalog/tmdb-proxy";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 import {
@@ -192,6 +194,25 @@ describe("IMDb id for a TMDB title", () => {
       throw new Error("connect ECONNREFUSED");
     });
     await expect(resolveImdbIdFromTmdb({ tmdbId: 4, mediaKind: "movie" })).rejects.toThrow();
+  });
+
+  test("a mirror HTML 404 is an outage when direct TMDB is unavailable, not a missing id", async () => {
+    setTmdbUserKeySource(() => "0123456789abcdef0123456789abcdef");
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request): Promise<Response> => {
+        const url = String(input);
+        if (url.startsWith(TMDB_DIRECT_BASE) || url.startsWith(TMDB_ALT_BASE)) {
+          throw new Error("getaddrinfo ENOTFOUND");
+        }
+        return new Response("<html>missing</html>", {
+          status: 404,
+          headers: { "content-type": "text/html" },
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await expect(resolveImdbIdFromTmdb({ tmdbId: 9, mediaKind: "movie" })).rejects.toThrow();
   });
 });
 

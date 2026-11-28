@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T05:20:56Z"
+lastReviewed: "2026-11-28T12:30:00Z"
 ---
 
 # Stremio addons
@@ -101,9 +101,9 @@ an owned local file for each accepted track.
 Addons are asked by IMDb id: `tt…` for a movie, `tt…:season:episode` for an
 episode. The id comes from the title when it carries one, else from TMDB's
 `external_ids` record for the title's TMDB id (`resolveImdbIdFromTmdb`). It is
-never matched by title text. A title with no IMDb id exhausts the addon with
-`unsupported-title`; a catalog that could not be asked is a retryable
-`network-error` and is not cached.
+never matched by title text. Only a definitive JSON 404 is "TMDB has this title
+and no IMDb id" (`unsupported-title`). A mirror HTML 404, or any other failure
+to ask, is a retryable `network-error` and is not cached.
 
 Season and episode numbers are sent as Kunai has them, which is TMDB's
 numbering. Addons number episodes the way IMDb does. The two agree for most

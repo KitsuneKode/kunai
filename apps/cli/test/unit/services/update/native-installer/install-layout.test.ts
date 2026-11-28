@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { rmSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
@@ -120,29 +121,37 @@ describe("install layout paths", () => {
 
   test("removeStagingAndPruneParents clears empty version and staging roots", async () => {
     const cacheDir = await mkdtemp(join(tmpdir(), "kunai-staging-prune-"));
-    const stagingRoot = join(cacheDir, "staging");
-    const staging = join(stagingRoot, "1.0.1", "txn-1");
-    await mkdir(staging, { recursive: true });
-    await writeFile(join(staging, "partial.bin"), "x");
+    try {
+      const stagingRoot = join(cacheDir, "staging");
+      const staging = join(stagingRoot, "1.0.1", "txn-1");
+      await mkdir(staging, { recursive: true });
+      await writeFile(join(staging, "partial.bin"), "x");
 
-    await removeStagingAndPruneParents(staging, stagingRoot);
+      await removeStagingAndPruneParents(staging, stagingRoot);
 
-    expect(await readdir(cacheDir)).toEqual([]);
+      expect(await readdir(cacheDir)).toEqual([]);
+    } finally {
+      rmSync(cacheDir, { recursive: true, force: true });
+    }
   });
 
   test("removeStagingAndPruneParents refuses traversal before recursive removal", async () => {
     const root = await mkdtemp(join(tmpdir(), "kunai-staging-containment-"));
-    const stagingRoot = join(root, "cache", "staging");
-    const external = join(root, "sentinel");
-    await mkdir(join(stagingRoot, "1.2.3"), { recursive: true });
-    await mkdir(external, { recursive: true });
-    await writeFile(join(external, "keep.txt"), "keep");
+    try {
+      const stagingRoot = join(root, "cache", "staging");
+      const external = join(root, "sentinel");
+      await mkdir(join(stagingRoot, "1.2.3"), { recursive: true });
+      await mkdir(external, { recursive: true });
+      await writeFile(join(external, "keep.txt"), "keep");
 
-    await expect(
-      removeStagingAndPruneParents(`${stagingRoot}/1.2.3/../../../sentinel`, stagingRoot),
-    ).rejects.toThrow("outside the staging root");
+      await expect(
+        removeStagingAndPruneParents(`${stagingRoot}/1.2.3/../../../sentinel`, stagingRoot),
+      ).rejects.toThrow("outside the staging root");
 
-    expect(await readdir(external)).toEqual(["keep.txt"]);
+      expect(await readdir(external)).toEqual(["keep.txt"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("a cross-family target never interprets the host's inherited profile override", () => {

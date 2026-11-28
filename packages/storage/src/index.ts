@@ -19,6 +19,7 @@ export type {
 } from "./maintenance";
 export {
   checkDesktopProfile,
+  classifyWindowsExecutableProfile,
   DesktopProfileError,
   getKunaiPaths,
   inferWindowsProfileFromExecutable,
@@ -27,7 +28,13 @@ export {
   PROFILE_MARKER,
   PROFILE_MARKER_CONTENT,
 } from "./paths";
-export type { KunaiPathOptions, KunaiPaths, StoragePlatform } from "./paths";
+export type {
+  KunaiPathOptions,
+  KunaiPaths,
+  StoragePlatform,
+  WindowsProfileFs,
+  WindowsProfileInference,
+} from "./paths";
 export { openKunaiDatabase, openKunaiDatabaseWithCorruptionRecovery } from "./sqlite";
 export type { KunaiDatabase, OpenDatabaseOptions } from "./sqlite";
 export { defaultTtlMsByClass, getDefaultTtlMs, getExpiresAt, isExpired } from "./ttl";

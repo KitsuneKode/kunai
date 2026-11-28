@@ -3,7 +3,7 @@ import {
   readInstalledStremioAddons,
   type InstalledStremioAddon,
 } from "@/domain/provider/stremio-addons";
-import { fetchTmdbJsonWithFallback, TmdbHttpError } from "@/services/catalog/tmdb-proxy";
+import { fetchTmdbJsonWithFallback, isDefinitiveTmdbAnswer } from "@/services/catalog/tmdb-proxy";
 import type { StremioAddonConfigEntry } from "@kunai/config";
 import type { CoreProviderModule } from "@kunai/core";
 import {
@@ -32,7 +32,11 @@ export const resolveImdbIdFromTmdb: StremioImdbIdResolver = async ({
   try {
     body = await fetchTmdbJsonWithFallback(path, signal);
   } catch (error) {
-    if (error instanceof TmdbHttpError && error.status === 404) return null;
+    // A mirror's HTML 404 is that mirror failing. Only a definitive JSON 404
+    // means TMDB has the title and no IMDb id; anything else must reject.
+    if (error instanceof Error && isDefinitiveTmdbAnswer(error) && error.status === 404) {
+      return null;
+    }
     throw error;
   }
   const imdbId = isJsonObject(body) ? body.imdb_id : undefined;
