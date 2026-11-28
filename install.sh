@@ -395,12 +395,13 @@ canonical_path() {
 
 	[[ "$path" == /* ]] || path="$PWD/$path"
 	while [[ ! -d "$path" ]]; do
-		suffix=("$(basename "$path")" "${suffix[@]}")
+		# ${arr[@]+...}: bash 3.2 (macOS) with `set -u` rejects an empty array.
+		suffix=("$(basename "$path")" ${suffix[@]+"${suffix[@]}"})
 		path="$(dirname "$path")"
 	done
 	path="$(cd -P "$path" && pwd -P)" || return 1
 
-	for component in "${suffix[@]}"; do
+	for component in ${suffix[@]+"${suffix[@]}"}; do
 		case "$component" in
 		"" | .) ;;
 		..) path="$(dirname "$path")" ;;
