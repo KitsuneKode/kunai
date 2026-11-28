@@ -1,3 +1,4 @@
+import { InstallDock } from "@/components/home/install-dock";
 import { CopyButton } from "@/components/ui/copy-button";
 import { CANONICAL_INSTALL, CANONICAL_SETUP, NATIVE_INSTALL_PS1 } from "@/lib/install-commands";
 import type { ReleaseNotesArtifact } from "@/lib/release-notes";
@@ -14,20 +15,15 @@ export function ReleaseInstallPanel({
   const showVersioned = release?.status === "published";
 
   return (
-    <div className="border-fd-border bg-fd-background flex flex-col gap-3 rounded-md border p-4 text-sm">
+    <div className="kunai-bento-tile flex flex-col gap-4 text-sm">
       {showCanonical ? (
         <>
-          <p className="kunai-type-caption m-0">Canonical install</p>
-          <p className="text-fd-muted-foreground m-0 text-xs">Linux / macOS</p>
-          <code className="kunai-code-row">
-            <span>{CANONICAL_INSTALL}</span>
-            <CopyButton text={CANONICAL_INSTALL} label="release-canonical-install" />
-          </code>
-          <p className="text-fd-muted-foreground m-0 text-xs">Windows (PowerShell)</p>
-          <code className="kunai-code-row">
-            <span>{NATIVE_INSTALL_PS1}</span>
-            <CopyButton text={NATIVE_INSTALL_PS1} label="release-windows-install" />
-          </code>
+          <p className="kunai-bento-tile__label m-0">Canonical install</p>
+          <InstallDock
+            unixCommand={CANONICAL_INSTALL}
+            windowsCommand={NATIVE_INSTALL_PS1}
+            labelPrefix="release-canonical-install"
+          />
           <code className="kunai-code-row">
             <span>{CANONICAL_SETUP}</span>
             <CopyButton text={CANONICAL_SETUP} label="release-setup" />
@@ -36,12 +32,12 @@ export function ReleaseInstallPanel({
       ) : null}
       {showVersioned && release ? (
         <>
-          <p className="kunai-type-caption m-0 mt-2">Versioned package shortcuts</p>
+          <p className="kunai-bento-tile__label m-0 mt-2">Versioned package shortcuts</p>
           <code className="kunai-code-row">
             <span>{release.install.bunx}</span>
             <CopyButton text={release.install.bunx} label={`release-bunx-${release.tag}`} />
           </code>
-          <code className="text-fd-muted-foreground font-mono text-xs">{release.install.npm}</code>
+          <code className="font-mono text-xs text-[var(--home-text-4)]">{release.install.npm}</code>
         </>
       ) : null}
     </div>

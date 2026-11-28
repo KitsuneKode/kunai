@@ -110,9 +110,12 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-breathe: cubic-bezier(0.37, 0, 0.63, 1);
   --dur-press: 140ms;
   --dur-pop: 180ms;
   --dur-panel: 240ms;
+  --dur-color: 150ms;
   --kunai-ease-out: var(--ease-out);
   --kunai-ease-drawer: var(--ease-drawer);
   --kunai-duration-fast: var(--dur-press);
@@ -122,9 +125,10 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-press: 0ms;
-    --dur-pop: 0ms;
-    --dur-panel: 0ms;
+    --dur-pop: 150ms;
+    --dur-panel: 150ms;
+    --dur-color: 150ms;
     --kunai-duration-fast: 0ms;
-    --kunai-duration-ui: 0ms;
+    --kunai-duration-ui: 150ms;
   }
 }

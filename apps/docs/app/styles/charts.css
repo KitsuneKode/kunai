@@ -180,20 +180,7 @@
   }
 }
 
-/*
- * The time-series plots are rendered by recharts (`components/ui/chart.tsx`),
- * which takes its series colours from the tokens above via `ChartConfig` and
- * draws its own grid and axes. The hand-rolled `.kunai-plot*` marks that used
- * to live here were removed with `trend-plot.tsx`.
- */
-
-/*
- * Ranked horizontal bars. Table semantics — the printed value beside each bar
- * IS the table view — but none of the page's editorial table chrome. The
- * `.kunai-home table` rules (serif small caps, boxed cells, `!important`
- * padding) turn a chart into a data grid, so they are reset here; the element
- * qualifier matches their specificity and charts.css is imported last.
- */
+/* Ranked horizontal bars reset editorial table chrome from home.css. */
 table.kunai-chart {
   width: 100%;
   table-layout: fixed;

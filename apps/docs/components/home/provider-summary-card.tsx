@@ -6,34 +6,28 @@ type ProviderSummaryCardProps = {
   readonly summary: ProviderSummary;
 };
 
+/** Slim server header above the interactive ProviderDirectory, preserving disclaimer truth. */
 export function ProviderSummaryCard({ summary }: ProviderSummaryCardProps) {
-  const providerNames =
-    summary.names.length > 0 ? summary.names.join(", ") : "See the provider table";
-
   return (
-    <div className="kunai-surface-shell">
-      <div className="kunai-surface-shell__inner flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between md:p-8">
-        <div className="max-w-2xl">
-          <p className="kunai-type-mono text-fd-foreground text-2xl font-medium tracking-tight">
-            {summary.count} providers registered
-          </p>
-          <p className="kunai-type-body text-fd-muted-foreground mt-3 text-sm leading-relaxed">
-            Kunai talks to third-party adapters on your machine. Registered adapters today:{" "}
-            {providerNames}. They are unaffiliated and may break or disappear.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Link className="kunai-button kunai-button-primary" href="/docs/users/providers">
-            <span>Provider guide</span>
-            <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
-          </Link>
-          <Link
-            className="kunai-button border-fd-border"
-            href="/docs/users/providers#active-providers"
-          >
-            Full provider table
-          </Link>
-        </div>
+    <div className="kunai-provider-header">
+      <p className="m-0 max-w-2xl text-sm leading-relaxed text-[var(--home-text-4)]">
+        <span className="font-mono text-[var(--home-text-2)] tabular-nums">
+          {summary.count} registered adapters
+        </span>{" "}
+        — third-party and unaffiliated; streams resolve directly on your machine and may break or
+        disappear.
+      </p>
+      <div className="flex shrink-0 flex-wrap items-center gap-3">
+        <Link className="kunai-button kunai-button-quiet px-2 text-xs" href="/docs/users/providers">
+          <span>Provider guide</span>
+          <IconArrowRight className="ml-1 size-3.5" stroke={1.5} />
+        </Link>
+        <Link
+          className="kunai-button kunai-button-quiet px-2 text-xs"
+          href="/docs/users/providers#active-providers"
+        >
+          Full provider table
+        </Link>
       </div>
     </div>
   );

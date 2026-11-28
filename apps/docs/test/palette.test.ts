@@ -4,6 +4,7 @@ import path from "node:path";
 
 const STYLES = path.resolve(import.meta.dir, "../app/styles");
 const tokensCss = fs.readFileSync(path.join(STYLES, "tokens.css"), "utf-8");
+const homeCss = fs.readFileSync(path.join(STYLES, "home.css"), "utf-8");
 const chromeCss = fs.readFileSync(path.join(STYLES, "docs-chrome.css"), "utf-8");
 const typographyCss = fs.readFileSync(path.join(STYLES, "typography.css"), "utf-8");
 
@@ -51,6 +52,49 @@ describe("docs palette contrast floors", () => {
   test("`border-input` resolves to the control border, not the decorative divider", () => {
     const global = fs.readFileSync(path.resolve(STYLES, "../global.css"), "utf-8");
     expect(global).toMatch(/--color-input:\s*var\(--kunai-line-control\)/);
+  });
+});
+
+describe("web Sumi & Sakura skin contrast floors", () => {
+  const HOME_TEXT_SURFACES = [
+    "--home-well",
+    "--home-ground",
+    "--home-raise-1",
+    "--home-raise-2",
+  ] as const;
+
+  const HOME_CONTROL_SURFACES = ["--home-ground", "--home-raise-1", "--home-raise-2"] as const;
+
+  test("primary, lead and body text read at 4.5:1 on every web surface", () => {
+    for (const textToken of ["--home-text-1", "--home-text-2", "--home-text-3"] as const) {
+      const ink = cssVar(homeCss, textToken);
+      for (const surface of HOME_TEXT_SURFACES) {
+        expect(
+          ratio(ink, cssVar(homeCss, surface)),
+          `${textToken} on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  test("caption text reads at 4.5:1 on ground, raise-1 and raise-2", () => {
+    const caption = cssVar(homeCss, "--home-text-4");
+    for (const surface of HOME_CONTROL_SURFACES) {
+      expect(
+        ratio(caption, cssVar(homeCss, surface)),
+        `--home-text-4 on ${surface}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  test("web control border holds 3:1 contrast on ground, raise-1 and raise-2", () => {
+    const edge = cssVar(homeCss, "--home-line-control");
+    for (const surface of HOME_CONTROL_SURFACES) {
+      expect(
+        ratio(edge, cssVar(homeCss, surface)),
+        `--home-line-control on ${surface}`,
+      ).toBeGreaterThanOrEqual(3);
+    }
   });
 });
 

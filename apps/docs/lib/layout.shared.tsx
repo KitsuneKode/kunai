@@ -1,7 +1,8 @@
 import { KannaRestoreButton } from "@/components/brand/kanna-restore-button";
 import { DocsSidebarBanner } from "@/components/layout/docs-sidebar-banner";
-import { GithubStarCta } from "@/components/layout/github-star-cta";
+import { GithubStarCta, GithubStarCtaFallback } from "@/components/layout/github-star-cta";
 import { NavTitle } from "@/components/layout/nav-title";
+import { SidebarSponsorCta } from "@/components/layout/sidebar-sponsor-cta";
 import { SUPPORT_PATH } from "@/lib/support";
 import {
   IconBook,
@@ -14,6 +15,7 @@ import {
 } from "@tabler/icons-react";
 import type { DocsLayoutProps } from "fumadocs-ui/layouts/docs";
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
+import { Suspense } from "react";
 
 export function baseOptions(): BaseLayoutProps {
   return {
@@ -97,14 +99,34 @@ export function baseOptions(): BaseLayoutProps {
   };
 }
 
+/**
+ * Home & standalone page nav options.
+ *
+ * `baseOptions()` marks in-tree links `on: "nav"` so `DocsLayout` does not
+ * duplicate them above the sidebar page tree. On `HomeLayout` there is no
+ * sidebar, so mobile visitors rely on the nav popover — setting `on: "all"`
+ * here keeps every destination reachable in the mobile menu while preserving
+ * the docs sidebar contract tested in `test/render.test.ts`.
+ */
+export function homeLayoutOptions(): BaseLayoutProps {
+  const options = baseOptions();
+  return {
+    ...options,
+    links: options.links?.map((link) => ({ ...link, on: "all" as const })),
+  };
+}
+
 export const docsSidebar: NonNullable<DocsLayoutProps["sidebar"]> = {
   collapsible: true,
   defaultOpenLevel: 1,
   banner: <DocsSidebarBanner />,
   footer: (
-    <>
-      <GithubStarCta />
+    <div className="flex flex-col gap-2">
+      <Suspense fallback={<GithubStarCtaFallback />}>
+        <GithubStarCta />
+      </Suspense>
+      <SidebarSponsorCta />
       <KannaRestoreButton />
-    </>
+    </div>
   ),
 };

@@ -59,6 +59,9 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
  * that the resting still is up before anyone has looked for it.
  */
 const SETTLE_MS = 160;
+/** How long, per phase, before an unprompted line is due: [min, max] ms. */
+type ChatterWindows = Partial<Record<RoamerPhase, readonly [number, number]>>;
+
 /**
  * How long she goes between unprompted lines, by state.
  *
@@ -66,7 +69,7 @@ const SETTLE_MS = 160;
  * is not asleep — and walking the shortest, because that is when you are most
  * likely to be looking at her.
  */
-const CHATTER_WINDOW_MS: Partial<Record<RoamerPhase, readonly [number, number]>> = {
+const CHATTER_WINDOW_MS: ChatterWindows = {
   walking: [16000, 34000],
   // Arriving and looking at you: she has just moved, so she is not due a line yet.
   sitting: [24000, 52000],
@@ -290,70 +293,91 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     if (!enabled || paused) return undefined;
     lastFrame.current = 0;
 
-    function onMove(event: PointerEvent) {
-      pointer.current = { x: event.clientX, y: event.clientY };
-      if (!seeded.current) {
-        // Drop her in beside the pointer on first sight rather than marching
-        // her across the whole viewport from wherever she was parked.
-        seeded.current = true;
-        const at = { x: event.clientX - 90, y: event.clientY + 50 };
-        machine.current = { ...createRoamerState(at), phase: "sitting" };
+    function refreshExclusionBand() {
+      const sidebar = document.getElementById("nd-sidebar")?.getBoundingClientRect();
+      const toc = document.getElementById("nd-toc")?.getBoundingClientRect();
+      const left = sidebar && sidebar.width > 1 ? sidebar.right : null;
+      const right = toc && toc.width > 1 ? toc.left : null;
+      exclusionBand.current =
+        left !== null || right !== null
+          ? { left: left ?? 0, right: right ?? Number.POSITIVE_INFINITY }
+          : null;
+      exclusionStamp.current = performance.now();
+    }
+
+    function startLoop() {
+      if (document.hidden || frameRef.current !== null || !seeded.current) return;
+      lastFrame.current = 0;
+      frameRef.current = window.requestAnimationFrame(tick);
+    }
+
+    function stopLoop() {
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
       }
     }
 
-    function tick(timestamp: number) {
-      frameRef.current = window.requestAnimationFrame(tick);
-      const host = hostRef.current;
-      if (!host) return;
+    function onMove(event: PointerEvent) {
+      // Keep Kanna patrolling calmly along the bottom edge corridor so she never
+      // walks across headlines, prose, or cards, while still tracking your cursor horizontally.
+      const corridorY = Math.max(size, window.innerHeight - size / 2 - 14);
+      pointer.current = { x: event.clientX, y: corridorY };
+      if (!seeded.current) {
+        seeded.current = true;
+        const startX = Math.max(size, Math.min(window.innerWidth - size, event.clientX - 90));
+        const at = { x: startX, y: corridorY };
+        machine.current = { ...createRoamerState(at), phase: "sitting" };
+        refreshExclusionBand();
+      }
+      startLoop();
+    }
 
-      // Every frame, so motion is smooth; the *pace* is held constant by delta
-      // time rather than by throttling the clock. A backgrounded tab returns
-      // one enormous delta, which without the clamp teleports her across the
-      // page on the first frame back.
+    function onCopied() {
+      if (seeded.current) say(["Copied — paste it in your shell.", "Ready when you are."]);
+    }
+
+    function tick(timestamp: number) {
+      frameRef.current = null;
+      const host = hostRef.current;
+      if (!host || !seeded.current) return;
+
       const previous = lastFrame.current || timestamp;
       lastFrame.current = timestamp;
       const dt = Math.min((timestamp - previous) / 1000, 0.05);
-
-      if (!seeded.current) {
-        // `.kunai-roamer` is fixed at the origin, so without this she is parked
-        // in the top-left corner from mount until the pointer first moves.
-        const parked = machine.current.pos;
-        host.style.transform = `translate3d(${parked.x}px, ${parked.y}px, 0)`;
-        return;
-      }
 
       const before = machine.current;
       const next = stepRoamer(before, { pointer: pointer.current, dt });
       machine.current = next;
 
-      // Keep her out of the docs chrome columns — sidebar on the left, TOC on
-      // the right. A TOC link that lands on her quip button reads as a dead
-      // link. Rects re-read on a ~500ms cadence because getBoundingClientRect
-      // every frame is a layout read.
-      if (timestamp - exclusionStamp.current > 500) {
-        exclusionStamp.current = timestamp;
-        const sidebar = document.getElementById("nd-sidebar")?.getBoundingClientRect();
-        const toc = document.getElementById("nd-toc")?.getBoundingClientRect();
-        const left = sidebar && sidebar.width > 1 ? sidebar.right : null;
-        const right = toc && toc.width > 1 ? toc.left : null;
-        exclusionBand.current =
-          left !== null || right !== null
-            ? { left: left ?? 0, right: right ?? Number.POSITIVE_INFINITY }
-            : null;
+      // Refresh docs sidebar/TOC bounds occasionally while moving so navigation stays clickable.
+      if (next.phase === "walking" && timestamp - exclusionStamp.current > 1000) {
+        refreshExclusionBand();
       }
       const band = exclusionBand.current;
-      if (band) {
-        const margin = size / 2 + 12;
-        const clampedX = Math.min(Math.max(next.pos.x, band.left + margin), band.right - margin);
-        if (clampedX !== next.pos.x) {
-          machine.current = { ...next, pos: { ...next.pos, x: clampedX } };
+      const edgePad = size / 2 + 16;
+      const minX = band ? band.left + edgePad : edgePad;
+      const maxX = band
+        ? Math.min(band.right - edgePad, window.innerWidth - edgePad)
+        : window.innerWidth - edgePad;
+      const corridorY = Math.max(size, window.innerHeight - size / 2 - 14);
+      let clampedX = Math.min(Math.max(next.pos.x, minX), Math.max(minX, maxX));
+      // Step aside from the centered bottom Command Dock pill when it is mounted.
+      const dockPill = document.querySelector(".kunai-dock-pill");
+      if (dockPill) {
+        const dockRect = dockPill.getBoundingClientRect();
+        if (clampedX > dockRect.left - edgePad && clampedX < dockRect.right + edgePad) {
+          const mid = (dockRect.left + dockRect.right) / 2;
+          clampedX =
+            clampedX < mid
+              ? Math.max(minX, dockRect.left - edgePad)
+              : Math.min(maxX, dockRect.right + edgePad);
         }
       }
+      if (clampedX !== next.pos.x || corridorY !== next.pos.y) {
+        machine.current = { ...next, pos: { x: clampedX, y: corridorY } };
+      }
 
-      // The stride advances by the distance she actually covered, so her feet
-      // keep pace with her speed, ease as she eases, and stop when she does.
-      // Measured after the chrome clamp above: a clamped step that moved her
-      // nowhere must not turn her legs.
       const finalPos = machine.current.pos;
       const stepX = finalPos.x - before.pos.x;
       const stepY = finalPos.y - before.pos.y;
@@ -361,14 +385,11 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       const stride = gait.current;
       if (next.phase === "walking") {
         stride.settleMs = 0;
-        // Start each walk level; the tilt then follows where she is actually going.
         if (before.phase !== "walking") stride.heading = 0;
-        // A frame that barely moved her has no meaningful direction; keep the last.
         if (travelled > 0.2) {
           stride.heading = smoothHeading(stride.heading, headingFromMotion(stepX, stepY), dt);
         }
         stride.phase = advancePhase(stride.phase, travelled, size);
-        // Her path leans off horizontal: nose up to climb, nose down to descend.
         stride.pose = withHeading(gaitPose(stride.phase), stride.heading);
         walkerRef.current?.setPose(stride.pose);
         if (before.phase !== "walking") setShowWalker(true);
@@ -379,8 +400,6 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         if (t >= 1) setShowWalker(false);
       }
 
-      // React state only when it actually changed: this runs every frame, and
-      // setting an identical phase would re-render the whole subtree at 60Hz.
       if (next.phase !== before.phase) setPhase(next.phase);
       if (next.facing !== before.facing) setFacing(next.facing);
 
@@ -389,27 +408,48 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         pos.y -
         size / 2
       ).toFixed(1)}px, 0)`;
+
+      // Once asleep and fully settled, pause rAF completely until the next pointer move.
+      const isSleepingIdle = next.phase === "asleep" && !showWalkerRef.current && travelled === 0;
+      if (!isSleepingIdle && !document.hidden) {
+        frameRef.current = window.requestAnimationFrame(tick);
+      }
     }
 
     window.addEventListener("pointermove", onMove, { passive: true });
+    // A height change moves the bottom corridor. The pointer and committed
+    // targets move with it, or a walk begun at the old height can never arrive.
+    function onResize() {
+      refreshExclusionBand();
+      const corridorY = Math.max(size, window.innerHeight - size / 2 - 14);
+      if (pointer.current && pointer.current.y !== corridorY) {
+        pointer.current = { ...pointer.current, y: corridorY };
+      }
+      const state = machine.current;
+      if (state.committed.y !== corridorY) {
+        machine.current = { ...state, committed: { ...state.committed, y: corridorY } };
+      }
+    }
+
+    window.addEventListener("resize", onResize, { passive: true });
+    window.addEventListener("kunai:copied", onCopied);
     function syncVisibility() {
       if (document.hidden) {
-        if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      } else if (frameRef.current === null) {
-        lastFrame.current = 0;
-        frameRef.current = window.requestAnimationFrame(tick);
+        stopLoop();
+      } else if (seeded.current && machine.current.phase !== "asleep") {
+        startLoop();
       }
     }
     syncVisibility();
     document.addEventListener("visibilitychange", syncVisibility);
     return () => {
       window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("kunai:copied", onCopied);
       document.removeEventListener("visibilitychange", syncVisibility);
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
+      stopLoop();
     };
-  }, [enabled, paused, size, machine]);
+  }, [enabled, paused, size, machine, say]);
 
   // Unprompted chatter. `phase` is read through a ref rather than a dependency
   // on purpose: as a dependency it re-ran this effect every time she started or

@@ -1,6 +1,6 @@
 ---
-title: Documentation
-description: Install Kunai, learn the terminal shell, resolve third-party streams and hand them to mpv, recover when playback stalls, and debug with evidence-first tools.
+title: Kunai Documentation
+description: Install Kunai, run the terminal shell, resolve streams into mpv, recover when playback stalls, and debug with local diagnostics.
 ---
 
 Kunai is a terminal-first client: search a title, resolve a URL a third-party provider already serves, hand it to mpv, and recover when catalogs drift. It does not host, upload, mirror, seed, or distribute video content. This documentation states what works today, what is beta-only, and how to debug with evidence.
@@ -32,24 +32,36 @@ Press `Ctrl+K` (`Cmd+K` on macOS) or use the sidebar search box to search every 
 
 <Steps>
   <Step>
-    ### Install and verify Read [Getting started](/docs/users/getting-started), then
+    ### Install and verify
+
+    Read [Getting started](/docs/users/getting-started), then
     [Platforms](/docs/users/platforms) for OS-specific tools. Binary installs via `install.sh` /
     `install.ps1` are beta supported - see [Install and update](/docs/users/install-and-update).
+
   </Step>
   <Step>
-    ### Learn the shell Use [What you can do](/docs/users/what-you-can-do) for the capability map,
+    ### Learn the shell
+
+    Use [What you can do](/docs/users/what-you-can-do) for the capability map,
     the [Feature tour](/docs/users/feature-tour) for live command/provider tables, and [Commands and
     shortcuts](/docs/users/commands-and-shortcuts) for daily palette work.
+
   </Step>
   <Step>
-    ### Plan for failure [Playback and recovery](/docs/users/playback-and-recovery) and
+    ### Plan for failure
+
+    [Playback and recovery](/docs/users/playback-and-recovery) and
     [Providers](/docs/users/providers) explain recover vs fallback.
     [Troubleshooting](/docs/users/troubleshooting) indexes common symptoms.
     [Diagnostics](/docs/users/diagnostics-and-reporting) shows how to export evidence safely.
+
   </Step>
   <Step>
-    ### Tune and extend [Customization](/docs/users/customization) covers config, mpv, and Discord
+    ### Tune and extend
+
+    [Customization](/docs/users/customization) covers config, mpv, and Discord
     presence. Developers: [Contribute](/docs/developer/contribute).
+
   </Step>
 </Steps>
 
@@ -63,7 +75,7 @@ Press `Ctrl+K` (`Cmd+K` on macOS) or use the sidebar search box to search every 
 
 Kunai does not work without the tools that did this first:
 
-- [ani-cli](https://github.com/pystardust/ani-cli): proved that fast, shell-native playback can be joyful. The AllManga decoder in `packages/providers/src/allmanga` is checked for parity against it.
+- [ani-cli](https://github.com/pystardust/ani-cli): proved that fast, shell-native anime playback can be a daily driver and inspired Kunai's terminal workflow.
 - [mpv](https://mpv.io): the player. Kunai finds a stream and gets out of the way; everything you actually watch, you watch in mpv.
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp): extraction and offline downloads.
 - [AniSkip](https://aniskip.com): the community skip-times database behind auto-skip.

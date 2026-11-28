@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "cd ../.. && bun install --frozen-lockfile",
-  "buildCommand": "bun run generate && bun run build:app",
+  "buildCommand": "(git rev-parse --is-shallow-repository 2>/dev/null | grep -q true && git fetch --unshallow --quiet || true) && bun run generate && bun run build:app",
   "regions": ["iad1"]
 }

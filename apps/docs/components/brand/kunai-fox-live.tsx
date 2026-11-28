@@ -56,8 +56,10 @@ export function KunaiFoxLive({
   const apply = useCallback((dx: number, dy: number, near: boolean) => {
     const host = hostRef.current;
     if (!host) return;
-    host.style.setProperty("--fox-dx", `${dx.toFixed(2)}px`);
-    host.style.setProperty("--fox-dy", `${dy.toFixed(2)}px`);
+    host.style.willChange = near ? "transform" : "auto";
+    host.style.transform = near
+      ? `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0)`
+      : "translate3d(0, 0, 0)";
     setNoticed(near);
   }, []);
 

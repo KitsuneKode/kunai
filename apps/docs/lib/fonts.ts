@@ -9,7 +9,7 @@ export const fontSans = Outfit({
 export const fontSerif = Cormorant_Garamond({
   subsets: ["latin"],
   variable: "--font-serif",
-  weight: ["300", "400", "500", "600", "700"],
+  weight: ["300", "400", "600"],
   display: "swap",
 });
 

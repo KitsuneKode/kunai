@@ -1,0 +1,53 @@
+---
+title: Kunai vs ani-cli
+description: Honest comparison between Kunai and ani-cli covering media scope (anime, movies, TV, YouTube), persistent TUI vs shell pipeline, provider recovery, offline downloads, sync, and Android/Termux support.
+---
+
+Both Kunai and [ani-cli](https://github.com/pystardust/ani-cli) let you search and stream media from the terminal into `mpv` without opening a browser. They optimize for different trade-offs: `ani-cli` is a single lightweight POSIX shell script focused strictly on anime; Kunai is a persistent terminal media shell covering movies, TV series, anime, and YouTube with automatic provider failover, offline downloads, history/continue watching, and tracker sync.
+
+**Who this is for:** `ani-cli` users evaluating Kunai, or anyone deciding which terminal streaming CLI fits their setup.
+
+## Side-by-side comparison
+
+| Capability                      | Kunai                                                                                                                                      | ani-cli                                            |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| **Media scope**                 | Movies, TV shows, anime, and YouTube                                                                                                       | Anime only                                         |
+| **Runtime & install**           | Single native Bun binary (`install.sh` / `install.ps1` / `bunx`)                                                                           | POSIX shell script (`sh` + `curl` + `fzf` + `sed`) |
+| **Interface**                   | Persistent interactive TUI (mouse + keyboard, command palette `/`, inline posters, themes)                                                 | Line-oriented `fzf` / prompt pipeline              |
+| **Playback engine**             | Managed `mpv` over IPC (persistent session, resume, auto-next, intro/credits skip)                                                         | Spawns `mpv` / `vlc` / `iina` directly             |
+| **Provider failover**           | Multi-provider automatic failover & health quarantine per lane, plus signed Tier-1 hotfix manifests (`kunai providers update`)             | Single primary anime upstream                      |
+| **Audio & subtitles**           | Per-lane audio/subtitle profiles (Sub/Dub, English, Hindi, Portuguese, Arabic, German, Spanish, French, Japanese, Korean) + Wyzie fallback | Sub/Dub flag (`--dub`) + embedded/provider subs    |
+| **Quality & 4K / HDR**          | 4K/2160p quality ranking, live Tracks sheet switcher, per-lane ceilings                                                                    | Resolution selection (`-q`)                        |
+| **History & Continue Watching** | Local SQLite watch history, resume timestamps, airing calendar, Up Next queue                                                              | Lightweight text history (`-c`)                    |
+| **Tracker sync**                | Built-in AniList and TMDB OAuth sync + Discord Rich Presence                                                                               | External / community hooks                         |
+| **Offline downloads**           | Managed download queue (`yt-dlp` / `ffmpeg`), offline library, subtitle sidecars                                                           | Direct download flag (`-d`)                        |
+| **Mobile / Android**            | Termux native binary with local stream gateway + Android intent handoff                                                                    | Termux shell script + Android intent handoff       |
+| **Footprint**                   | Larger binary (~60–110 MiB self-contained)                                                                                                 | Tiny (~500 lines of shell)                         |
+
+## When to pick Kunai
+
+- You want **one terminal app** for movies, TV shows, anime, and YouTube instead of separate scripts.
+- You want **automatic failover** when a streaming host goes down, without hunting for broken mirrors manually.
+- You care about **resume tracking, auto-skip intros/credits, AniList/TMDB sync, offline libraries, or multi-language audio/subtitle profiles**.
+- You want structured headless automation (`kunai -S "Frieren" -a --json`, `kunai capabilities --json`).
+
+## When to stick with ani-cli
+
+- You only watch anime and want the **smallest possible footprint** (a single POSIX shell script with zero binary downloads).
+- You prefer piping everything through `fzf` inside a minimalist shell workflow without an interactive TUI.
+
+## Migrating from ani-cli in 30 seconds
+
+```sh
+# Install Kunai (Linux / macOS)
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
+
+# Jump straight into anime mode with a search query (equivalent to `ani-cli "Frieren"`)
+kunai -a -S "Frieren"
+
+# Check installed providers & crypto health
+kunai providers status
+kunai providers verify
+```
+
+See [Getting Started](/docs/users/getting-started) for Windows, Termux/Android, and `mpv` setup, or [Providers](/docs/users/providers) for the full live provider roster.

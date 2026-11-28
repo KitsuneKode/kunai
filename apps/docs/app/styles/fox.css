@@ -23,7 +23,7 @@
  */
 .kunai-fox--animated {
   transform-origin: 50% 92%;
-  animation: kunai-fox-breathe 5.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  animation: kunai-fox-breathe 5.2s var(--ease-breathe) infinite;
 }
 
 .kunai-fox--mirrored.kunai-fox--animated {
@@ -60,9 +60,7 @@
 .kunai-fox-live {
   position: relative;
   display: block;
-  transform: translate(var(--fox-dx, 0), var(--fox-dy, 0));
-  transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+  transition: transform 240ms var(--ease-out);
 }
 
 .kunai-fox-live__stage {
@@ -79,12 +77,12 @@
 
 .kunai-fox-live__alert {
   opacity: 0;
-  transition: opacity 240ms ease-out;
+  transition: opacity 240ms var(--ease-out);
 }
 
 .kunai-fox-live__rest {
   opacity: 1;
-  transition: opacity 240ms ease-out;
+  transition: opacity 240ms var(--ease-out);
 }
 
 .kunai-fox-live.is-noticed .kunai-fox-live__alert {
@@ -166,7 +164,7 @@ a:focus-visible .kunai-nav-title .kunai-fox {
    holds — rather than the two fighting and neither reading. */
 @media (hover: hover) and (pointer: fine) {
   .kunai-fox-banner:hover .kunai-fox--animated {
-    animation: kunai-fox-perk 340ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    animation: kunai-fox-perk 340ms var(--ease-spring-overshoot) forwards;
   }
 }
 
@@ -198,7 +196,7 @@ a:focus-visible .kunai-nav-title .kunai-fox {
    the largest. */
 
 .kunai-fox--rewarded {
-  animation: kunai-fox-hop 620ms cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+  animation: kunai-fox-hop 620ms var(--ease-spring-overshoot) 1;
 }
 
 @keyframes kunai-fox-hop {
@@ -371,7 +369,7 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 .kunai-roamer__fox {
   display: block;
   transform-origin: 50% 90%;
-  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 260ms var(--ease-spring-overshoot);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -425,11 +423,11 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 }
 
 .kunai-roamer__fox.is-sitting {
-  animation: kunai-fox-breathe 5.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  animation: kunai-fox-breathe 5.2s var(--ease-breathe) infinite;
 }
 
 .kunai-roamer__fox.is-asleep {
-  animation: kunai-roamer-snooze 4.4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  animation: kunai-roamer-snooze 4.4s var(--ease-breathe) infinite;
 }
 
 @keyframes kunai-roamer-snooze {
@@ -446,20 +444,22 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   position: absolute;
   bottom: 100%;
   left: 50%;
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.45rem;
   transform: translateX(-50%);
   width: max-content;
   max-width: 15rem;
-  padding: 0.4rem 0.7rem;
-  border: 1px solid var(--kunai-line);
-  border-radius: 0.7rem;
-  background: var(--kunai-surface);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
-  color: var(--color-fd-foreground);
+  padding: 0.42rem 0.72rem;
+  border: 1px solid rgb(255 250 240 / 0.12);
+  border-radius: 0.75rem;
+  background: #1b1b19;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.07),
+    0 10px 28px rgb(0 0 0 / 0.65);
+  color: #f5f3ee;
   font-size: 0.8rem;
   line-height: 1.4;
   text-wrap: balance;
-  animation: kunai-roamer-say 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: kunai-roamer-say 220ms var(--ease-spring-overshoot) both;
 }
 
 @keyframes kunai-roamer-say {
@@ -486,7 +486,7 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   font-size: 0.72rem;
   line-height: 1;
   opacity: 0;
-  transition: opacity 160ms ease-out;
+  transition: opacity 160ms var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
