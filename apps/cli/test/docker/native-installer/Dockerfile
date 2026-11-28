@@ -13,6 +13,8 @@ ENV KUNAI_TEST_HOME=/tmp/kunai-home
 WORKDIR /work
 
 FROM alpine:3.20 AS musl
-RUN apk add --no-cache bash curl ca-certificates python3 coreutils util-linux zstd
+# The CI fixture is a real Bun musl executable. Install its loader dependencies
+# explicitly so clean-install can run it without relying on mpv.
+RUN apk add --no-cache bash curl ca-certificates python3 coreutils util-linux zstd libstdc++ libgcc
 ENV KUNAI_TEST_HOME=/tmp/kunai-home
 WORKDIR /work

@@ -226,7 +226,9 @@ if ($null -ne $ProfileDir) {
   }
 }
 else {
-  $CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\cache' }
+  # The default CLI data and cache roots share LOCALAPPDATA\kunai. Cleanup
+  # must stay scoped to installer-owned staging children of that root.
+  $CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai' }
 }
 function Test-ProfileMarker {
   $marker = Join-Path $ProfileDir '.kunai-profile'
@@ -462,7 +464,7 @@ function Resolve-OwnedPackageLauncher([string]$InstallMethod) {
       return (Join-Path $prefix 'kunai.cmd')
     }
   }
-  elseif ($InstallMethod -eq 'bun') {
+  elseif ($InstallMethod -in @('bun', 'source')) {
     $bunRoot = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.bun' }
     $binDir = if ($env:BUN_INSTALL_BIN) { $env:BUN_INSTALL_BIN } else { Join-Path $bunRoot 'bin' }
     return (Join-Path $binDir 'kunai.exe')
@@ -764,6 +766,35 @@ function Invoke-CapturedProcess([string]$Path, [string[]]$Arguments) {
   $stderr = $process.StandardError.ReadToEnd()
   $process.WaitForExit()
   return [pscustomobject]@{ ExitCode = $process.ExitCode; Stdout = $stdout.Result; Stderr = $stderr }
+}
+
+function Test-NativeBinaryStartup([string]$Path) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $Path
+  $psi.Arguments = '--version'
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardInput = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  $psi.EnvironmentVariables['DO_NOT_TRACK'] = '1'
+  $psi.EnvironmentVariables['CI'] = '1'
+  $process = [System.Diagnostics.Process]::Start($psi)
+  try {
+    $process.StandardInput.Close()
+    $stdout = $process.StandardOutput.ReadToEndAsync()
+    $stderr = $process.StandardError.ReadToEndAsync()
+    if (-not $process.WaitForExit(10000)) {
+      try { $process.Kill() } catch [InvalidOperationException] { }
+      throw 'The Kunai version check exceeded 10 seconds.'
+    }
+    if ($process.ExitCode -ne 0) {
+      throw ("Kunai version check exited with 0x{0:X8}. {1}{2}" -f $process.ExitCode, $stdout.Result, $stderr.Result)
+    }
+  }
+  finally {
+    $process.Dispose()
+  }
 }
 
 # True when $Candidate can verify raw Ed25519 (`pkeyutl -rawin`, OpenSSL 3+).
@@ -1824,6 +1855,15 @@ function Add-UserPath([string]$Dir) {
   }
 }
 
+function Complete-PackagePath([string]$Launcher) {
+  if ($DryRun) { return }
+  $dir = Split-Path -Parent $Launcher
+  $entries = @($env:Path -split [IO.Path]::PathSeparator | ForEach-Object { $_.Trim().Trim('"').TrimEnd('\', '/') })
+  if ($entries -contains $dir.TrimEnd('\', '/')) { return }
+  Add-UserPath $dir
+  Write-Info "For this terminal, run '$Launcher' directly. Ensure $dir is in your User PATH for new terminals."
+}
+
 function Get-KunaiPathCandidates {
   [OutputType([string[]])]
   param()
@@ -2619,6 +2659,13 @@ function Install-Binary {
       $launcherActivated = $true
       Update-Launcher -VersionPath $versionPath -LauncherPath $BinPath -Ver $resolved
 
+      if ($OnWindows) {
+        try { Test-NativeBinaryStartup $versionPath }
+        catch {
+          throw "Kunai startup check failed. $($_.Exception.Message) Versioned files remain at $versionPath. Fix the startup error and re-run the installer with -Version $resolved."
+        }
+      }
+
       $prevArg = ''
       if ($activationPrevious -and $activationPrevious -ne $resolved) { $prevArg = $activationPrevious }
       Write-Manifest -MethodName 'binary' -Ver $resolved -Launcher $BinPath `
@@ -2655,12 +2702,7 @@ function Install-Binary {
     }
     # Prune empty version/staging parents left by New-Item -Force.
     $versionStaging = Split-Path -Parent $staging
-    if ((Test-Path -LiteralPath $versionStaging) -and -not (Get-ChildItem -LiteralPath $versionStaging -Force -ErrorAction SilentlyContinue)) {
-      Remove-Item -LiteralPath $versionStaging -Force -ErrorAction SilentlyContinue
-    }
-    if ((Test-Path -LiteralPath $StagingRoot) -and -not (Get-ChildItem -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue)) {
-      Remove-Item -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue
-    }
+    Remove-EmptyStagingParents $versionStaging
     $cleanupDone = $true
   }
   catch {
@@ -2677,12 +2719,7 @@ function Install-Binary {
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
       }
       $versionStaging = Split-Path -Parent $staging
-      if ((Test-Path -LiteralPath $versionStaging) -and -not (Get-ChildItem -LiteralPath $versionStaging -Force -ErrorAction SilentlyContinue)) {
-        Remove-Item -LiteralPath $versionStaging -Force -ErrorAction SilentlyContinue
-      }
-      if ((Test-Path -LiteralPath $StagingRoot) -and -not (Get-ChildItem -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue)) {
-        Remove-Item -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue
-      }
+      Remove-EmptyStagingParents $versionStaging
     }
     throw
   }
@@ -2700,6 +2737,12 @@ function Install-Binary {
   }
   Write-Info "Installed kunai -> $BinPath (v$resolved at $versionPath)"
   Send-ReleaseMarker $base $activationPrevious $resolved
+}
+
+function Remove-EmptyStagingParents([string]$VersionStaging) {
+  foreach ($dir in @($VersionStaging, $StagingRoot)) {
+    try { [IO.Directory]::Delete($dir) } catch [IO.IOException], [UnauthorizedAccessException] { }
+  }
 }
 
 function Require-Cmd([string]$Name, [string]$InstallHint) {
@@ -2799,7 +2842,9 @@ switch ($Method) {
         Invoke-Step "npm install -g $Package@$resolved" { & npm install -g "$Package@$resolved" }
       }
       $resolved = Complete-PackageActiveVersion 'npm' $resolved
-      Write-Manifest 'npm-global' $resolved (Resolve-OwnedPackageLauncher 'npm')
+      $launcher = Resolve-OwnedPackageLauncher 'npm'
+      Write-Manifest 'npm-global' $resolved $launcher
+      Complete-PackagePath $launcher
     }
   }
   'bun' {
@@ -2814,7 +2859,9 @@ switch ($Method) {
         Invoke-Step "bun install -g $Package@$resolved" { & bun install -g "$Package@$resolved" }
       }
       $resolved = Complete-PackageActiveVersion 'bun' $resolved
-      Write-Manifest 'bun-global' $resolved (Resolve-OwnedPackageLauncher 'bun')
+      $launcher = Resolve-OwnedPackageLauncher 'bun'
+      Write-Manifest 'bun-global' $resolved $launcher
+      Complete-PackagePath $launcher
     }
   }
   'source' {
@@ -2847,7 +2894,9 @@ switch ($Method) {
         Invoke-Step 'bun run link:global' { }
       }
       $resolved = Complete-PackageActiveVersion 'source' $resolved
-      Write-Manifest 'source' $resolved 'kunai'
+      $launcher = Resolve-OwnedPackageLauncher 'source'
+      Write-Manifest 'source' $resolved $launcher
+      Complete-PackagePath $launcher
     }
   }
 }
@@ -2857,10 +2906,13 @@ switch ($Method) {
 # -Method binary left those users without mpv guidance or curl-impersonate.
 Install-OptionalDeps
 
-Write-Host 'Done.' -ForegroundColor Green
+if ($DryRun) {
+  Write-Host 'Dry run complete.'
+}
+else { Write-Host 'Done.' -ForegroundColor Green }
 if ($ProfileDir) {
   $binEscaped = $BinPath.Replace("'", "''")
-  Write-Host "This install belongs to the profile at $ProfileDir."
+  if (-not $DryRun) { Write-Host "This install belongs to the profile at $ProfileDir." }
   Write-Host "Invoke its profile launcher directly, e.g.:"
   Write-Host "  & '$binEscaped' -S `"Frieren`" -a"
   Write-Host "Update any time:  & '$binEscaped' upgrade"

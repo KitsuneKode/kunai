@@ -318,6 +318,8 @@ describe("install.sh dry-run", () => {
       expect(result.stdout).toContain("Downloading kunai-");
       expect(result.stdout).toContain("versions/");
       expect(result.stdout).toContain("[dry-run]");
+      expect(result.stdout).toContain("[dry-run] would install kunai");
+      expect(result.stdout).not.toContain("Installed kunai");
       expect(result.stderr).toBe("");
     } finally {
       sandbox.cleanup();
@@ -938,7 +940,7 @@ exec ${quoteShellArgument(realDd)} "$@"
     ["archive", 410],
   ] as const)("falls back to the legacy raw asset only for %s HTTP %i", async (missing, status) => {
     const target = hostInstallShTarget();
-    const body = "legacy-raw-fallback";
+    const body = "#!/bin/sh\necho legacy-raw-fallback\n";
     const canonical = createReleaseArchive(target, new TextEncoder().encode(body));
     const archiveDigest = createHash("sha256").update(canonical).digest("hex");
     const binaryDigest = createHash("sha256").update(body).digest("hex");
@@ -1204,6 +1206,41 @@ exec ${quoteShellArgument(realDd)} "$@"
     }
   });
 });
+
+test.skipIf(process.platform === "win32")(
+  "install.sh reports the startup failure and leaves no active install",
+  async () => {
+    const asset = hostInstallShAsset();
+    const body =
+      '#!/bin/sh\n[ "$DO_NOT_TRACK" = 1 ] || exit 90\necho "fixture loader error" >&2\nexit 127\n';
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-loader-failure");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--version", "9.8.7", "--yes", "--skip-deps"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            DO_NOT_TRACK: "0",
+          });
+          expect(result.status).not.toBe(0);
+          expect(result.stderr).toContain("fixture loader error");
+          expect(result.stderr).toContain("Re-run the installer with --version 9.8.7");
+          expect(result.stdout).not.toContain("Installed kunai");
+          expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+          expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai"))).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  },
+);
 
 /**
  * Release markers: one best-effort request after a successful install,
@@ -2252,6 +2289,34 @@ describe("install.sh lifecycle contract", () => {
 });
 
 describe("install.sh package activeVersion", () => {
+  test.skipIf(process.getuid?.() === 0)(
+    "rejects an unwritable npm prefix before npm install",
+    () => {
+      const sandbox = createInstallerSandbox("install-sh-npm-unwritable");
+      const prefix = join(sandbox.root, "npm-prefix");
+      try {
+        const shimDir = join(sandbox.root, "shims");
+        mkdirSync(shimDir);
+        mkdirSync(prefix, { mode: 0o555 });
+        installCommandShim(shimDir, "node");
+        installCommandShim(
+          shimDir,
+          "npm",
+          '#!/bin/sh\ncase "$1" in prefix) echo "$NPM_FIXTURE_PREFIX";; root) echo "$NPM_FIXTURE_PREFIX/lib/node_modules";; install) echo unexpected-install;; esac\n',
+        );
+        const env = withCommandPath({ ...sandbox.env, NPM_FIXTURE_PREFIX: prefix }, shimDir);
+        delete env.KUNAI_CONFIG_DIR;
+        const result = runInstallSh(["--method", "npm", "--yes", "--skip-deps"], env);
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("npm config set prefix ~/.local");
+        expect(result.stdout).not.toContain("unexpected-install");
+      } finally {
+        if (existsSync(prefix)) chmodSync(prefix, 0o755);
+        sandbox.cleanup();
+      }
+    },
+  );
+
   test("npm ignores stale PATH kunai, needs no Bun, and records npm-owned evidence", () => {
     const sandbox = createInstallerSandbox("install-sh-npm-version");
     try {
@@ -2293,6 +2358,7 @@ describe("install.sh package activeVersion", () => {
       expect(manifest.activeVersion).toBe("4.5.6");
       expect(manifest.activeVersion).not.toBe("latest");
       expect(manifest.launcherPath).toBe(join(npmPrefix, "bin", "kunai"));
+      expect(result.stderr + result.stdout).toContain(`${join(npmPrefix, "bin")} is not on PATH`);
       expect(result.stdout).not.toContain("bun found");
       expect(existsSync(join(sandbox.root, "bun-invoked"))).toBe(false);
     } finally {
@@ -2330,6 +2396,43 @@ describe("install.sh package activeVersion", () => {
       expect(manifest.activeVersion).toBe("7.8.9");
       expect(manifest.activeVersion).not.toBe("latest");
       expect(manifest.launcherPath).toBe(join(bunRoot, "bin", "kunai"));
+      expect(result.stderr + result.stdout).toContain(`${join(bunRoot, "bin")} is not on PATH`);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("source install records its Bun link and adds a new PATH entry", () => {
+    const sandbox = createInstallerSandbox("install-sh-source-path");
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      const checkout = join(sandbox.root, "checkout");
+      const bunBin = join(sandbox.root, "Bun tools", "bin");
+      const rc = join(sandbox.root, ".zshrc");
+      mkdirSync(shimDir);
+      mkdirSync(join(checkout, ".git"), { recursive: true });
+      writeFileSync(
+        join(checkout, "package.json"),
+        JSON.stringify({ name: "@kitsunekode/kunai", version: "4.5.6" }),
+      );
+      writeFileSync(
+        rc,
+        '# >>> kunai installer >>>\nexport PATH="/old/bin:$PATH"\n# <<< kunai installer <<<\n',
+      );
+      installCommandShim(shimDir, "bun");
+      installCommandShim(shimDir, "git");
+      const env = withCommandPath(
+        { ...sandbox.env, KUNAI_SOURCE_DIR: checkout, BUN_INSTALL_BIN: bunBin, SHELL: "/bin/zsh" },
+        shimDir,
+      );
+      delete env.KUNAI_CONFIG_DIR;
+      delete env.KUNAI_SKIP_PATH_UPDATE;
+      const result = runInstallSh(["--method", "source", "--yes", "--skip-deps"], env);
+
+      expect(result.status, result.stderr).toBe(0);
+      const manifest = readInstallerManifest(defaultInstallShPaths(env).configDir);
+      expect(manifest.launcherPath).toBe(join(bunBin, "kunai"));
+      expect(readFileSync(rc, "utf8")).toContain(`export PATH='${bunBin}':"$PATH"`);
     } finally {
       sandbox.cleanup();
     }
