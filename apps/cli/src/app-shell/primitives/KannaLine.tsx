@@ -3,7 +3,9 @@ import React from "react";
 
 import { companionFallbackGlyph } from "../companion-policy";
 import { reducedMotionEnabled } from "../motion-policy";
+import { measureColumns, truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
+import { useShellDimensions } from "../use-viewport-policy";
 import { useFrameTick } from "./SakuraPetal";
 
 /**
@@ -54,11 +56,15 @@ export function KannaLine({
   line,
   tone = "resting",
   showGlyph = true,
+  maxWidth,
 }: {
   readonly line: string;
   readonly tone?: KannaLineTone;
   readonly showGlyph?: boolean;
+  /** Columns available to the whole line, glyph and motion mark included. */
+  readonly maxWidth?: number;
 }) {
+  const { cols } = useShellDimensions();
   // A resting line is already there when the surface appears: it sits under a
   // title someone is reading, and text that assembles itself beside that is a
   // distraction. A line that reports work types on, once, and stops — the host
@@ -69,7 +75,13 @@ export function KannaLine({
   const twitch = useFrameTick(tone === "resting", TWITCH_INTERVAL_MS);
   const flick = useFrameTick(tone === "working", TAIL_INTERVAL_MS, TAIL.length - 1);
 
-  const shown = types ? line.slice(0, Math.ceil((line.length * typed) / TYPE_BEATS)) : line;
+  const prefixColumns = (showGlyph ? measureColumns(companionFallbackGlyph()) : 0) + 1;
+  // Never let a reaction wrap into the footer grammar: at 40 columns a full
+  // sentence otherwise becomes a second row exactly where the compact footer
+  // is already wrapping its chips.
+  const width = Math.max(8, (maxWidth ?? cols) - prefixColumns - 1);
+  const fitted = truncateLine(line, width);
+  const shown = types ? fitted.slice(0, Math.ceil((fitted.length * typed) / TYPE_BEATS)) : fitted;
   const mark =
     tone === "settled"
       ? SETTLED

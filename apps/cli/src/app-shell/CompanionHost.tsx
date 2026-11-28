@@ -11,6 +11,7 @@ import { companionMode } from "./companion-policy";
 import { CompanionPet } from "./CompanionPet";
 import { kannaLine } from "./kanna-voice";
 import { KannaLine, type KannaLineTone } from "./primitives/KannaLine";
+import { useShellDimensions } from "./use-viewport-policy";
 
 /** Moments where the work came good; the line settles instead of flicking. */
 const SETTLED_MOMENTS: ReadonlySet<CompanionMoment> = new Set(["recovered", "handoff"]);
@@ -70,6 +71,7 @@ export function CompanionHost({
   // Fixed when the host mounts, so re-rendering the surface never re-rolls the
   // line out from under the reader. A new moment picks from a different pool.
   const [pick] = React.useState(() => Math.floor(Math.random() * 997));
+  const { cols } = useShellDimensions();
   const mode = companionMode();
   if (moment === null || companionMode() === "off") return null;
 
@@ -91,7 +93,13 @@ export function CompanionHost({
       {picture ? <CompanionPet pose={poseForMoment(moment)} rows={rows} /> : null}
       {line ? (
         <Box marginLeft={picture ? 1 : 0}>
-          <KannaLine key={line} line={line} tone={toneFor(moment)} showGlyph={!picture} />
+          <KannaLine
+            key={line}
+            line={line}
+            tone={toneFor(moment)}
+            showGlyph={!picture}
+            maxWidth={cols - (picture ? rows * 2 + 2 : 0)}
+          />
         </Box>
       ) : null}
     </Box>
