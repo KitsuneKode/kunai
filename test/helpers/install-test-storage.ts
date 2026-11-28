@@ -8,7 +8,7 @@ import { storageRootEnv } from "./storage-env";
 const PROFILE_MARKER = ".kunai-profile";
 const PROFILE_MARKER_CONTENT = "kunai-profile-v1\n";
 
-export function installTestStorageIsolation(): void {
+export function mountTestStorageIsolation(): () => void {
   const root = mkdtempSync(join(tmpdir(), "kunai-test-profile-"));
   const env = storageRootEnv(root);
   const profileDir = env.KUNAI_CONFIG_DIR;
@@ -21,11 +21,16 @@ export function installTestStorageIsolation(): void {
   // before any test ran.
   delete process.env.KUNAI_BIN_DIR;
   Object.assign(process.env, env);
-  const cleanup = () => rmSync(root, { recursive: true, force: true, maxRetries: 3 });
+  return () => rmSync(root, { recursive: true, force: true, maxRetries: 3 });
+}
+
+export function installTestStorageIsolation(): void {
+  const cleanup = mountTestStorageIsolation();
   try {
     afterAll(cleanup);
   } catch {
     // The CLI privacy integration also imports its preload from plain Bun.
+    // Bun's test runner never delivers this event; the scratch guard does not use it.
     process.once("exit", cleanup);
   }
 }

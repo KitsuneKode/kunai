@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { existsSync, rmSync } from "node:fs";
+import { chmod, mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,14 +16,17 @@ const noTools = {
   listPathEntries: () => [],
 };
 
-const cleanup: (() => void)[] = [];
-afterEach(() => {
-  for (const undo of cleanup.splice(0)) undo();
+const cleanup: Array<() => void | Promise<void>> = [];
+afterEach(async () => {
+  // Later registrations undo the read-only mode before the root is removed.
+  for (const undo of cleanup.splice(0).reverse()) await undo();
 });
 
 async function isolatedRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "kunai-cap-notice-"));
-  cleanup.push(() => void rm(root, { recursive: true, force: true }));
+  cleanup.push(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
   cleanup.push(applyStorageRootEnv(root));
   return root;
 }
@@ -53,7 +56,9 @@ describe("capability notice state", () => {
     const configDir = getKunaiPaths().configDir;
     await mkdir(configDir, { recursive: true });
     await chmod(configDir, 0o555);
-    cleanup.push(() => void chmod(configDir, 0o755).catch(() => {}));
+    cleanup.push(async () => {
+      await chmod(configDir, 0o755).catch(() => undefined);
+    });
 
     const lines: string[] = [];
     const originalError = console.error;
