@@ -10,7 +10,7 @@
  */
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { chmodSync } from "node:fs";
+import { chmodSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { measureColumns } from "@/app-shell/shell-text";
@@ -1192,61 +1192,77 @@ describe("agent wiring · failover banner and startup failure", () => {
     }, 45_000);
   }
 
-  it("mid-stream failover banner names both providers and the preserved timestamp", async () => {
-    let showFailover: (() => void) | undefined;
-    let reportPlayingAgain: (() => void) | undefined;
-    await withSession(
-      "wiring-midstream-failover",
-      {
-        mpv: "fake",
-        fakeMpvMode: "hold",
-        columns: 120,
-        rows: 32,
-        beforeMount({ container }) {
-          showFailover = () => {
-            container.stateManager.dispatch({
-              type: "SET_PLAYBACK_FAILOVER",
-              failover: {
-                phase: "mid-stream",
-                fromLabel: "VidKing",
-                toLabel: "Rivestream",
-                preservedSeconds: 14 * 60 + 22,
-                tone: "warn",
-              },
-            });
-          };
-          reportPlayingAgain = () => {
-            container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
-          };
-        },
-      },
-      async (s) => {
+  for (const lane of [
+    {
+      id: "tmdb",
+      from: "Smoke Videasy",
+      to: "Smoke Series Fallback",
+      async drive(s: AgentSession) {
         await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
         s.press("smoke", K.enter);
-        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "movie fixture results");
         s.press(K.enter);
-        await s.waitForFrame((f) => f.includes("Now Playing"), "playback live", 30_000);
-        showFailover?.();
-        await s.waitForFrame(
-          (f) => f.includes("Switching from VidKing to Rivestream") && f.includes("14:22"),
-          "failover banner",
-        );
-        expect(s.frame()).toContain("Holding position at 14:22");
-        expect(s.sessionState().playbackFailover?.tone).toBe("warn");
-        expect(s.frame()).not.toContain("sourceId");
-        // Published while this session was already playing, so that dispatch
-        // leaves the banner up. The next playing status is what the player
-        // writes when the new source reports playback.
-        expect(s.sessionState().playbackFailover?.toLabel).toBe("Rivestream");
-        reportPlayingAgain?.();
-        await s.waitForFrame(
-          (f) => !f.includes("Switching from VidKing to Rivestream"),
-          "banner cleared after the player reports playing",
-        );
-        expect(s.sessionState().playbackFailover).toBeNull();
       },
-    );
-  }, 45_000);
+    },
+    {
+      id: "anime",
+      from: "Smoke AllAnime",
+      to: "Smoke Anime Fallback",
+      async drive(s: AgentSession) {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press(K.tab);
+        await s.waitForFrame((f) => f.includes("anime"), "anime mode");
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Anime"), "anime fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("▌ Episode 7"), "anime episode picker");
+        await s.waitSettled();
+        s.press(K.enter);
+      },
+    },
+  ] as const) {
+    it(`mid-stream failover banner follows the real player death path in the ${lane.id} lane`, async () => {
+      let evidencePath = "";
+      await withSession(
+        `wiring-real-midstream-failover-${lane.id}`,
+        {
+          mpv: "fake",
+          fakeMpvMode: "die-mid-stream",
+          columns: 120,
+          rows: 32,
+          extraEnv: { KUNAI_SMOKE_FAILOVER_PROVIDERS: "1" },
+          beforeMount({ profile }) {
+            evidencePath = join(profile.rootDir, "fake-mpv-evidence.jsonl");
+          },
+        },
+        async (s) => {
+          await lane.drive(s);
+          const banner = `Switching from ${lane.from} to ${lane.to}`;
+          await s.waitForFrame(
+            (f) => f.includes(banner) && f.includes("12:34"),
+            "real recovery failover banner",
+            45_000,
+          );
+          expect(s.frame()).toContain("Holding position at 12:34");
+          expect(s.sessionState().playbackFailover?.tone).toBe("warn");
+          expect(s.frame()).not.toContain("sourceId");
+
+          await s.waitForFrame(
+            (f) => !f.includes(banner),
+            "banner clears after replacement source reports playing",
+            45_000,
+          );
+          expect(s.sessionState().playbackFailover).toBeNull();
+
+          const evidence = readFileSync(evidencePath, "utf8");
+          expect(occurrences(evidence, '"type":"end-file","reason":"error"')).toBe(1);
+          expect(occurrences(evidence, '"type":"mid-stream-load"')).toBe(2);
+          expect(evidence).toContain(`${lane.to === "Smoke Series Fallback" ? "-series-fallback" : "-anime-fallback"}.mp4`);
+        },
+      );
+    }, 70_000);
+  }
+
 });
 
 describe("agent wiring · relaunch", () => {

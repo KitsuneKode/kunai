@@ -16,7 +16,10 @@ export async function loadCompiledSmokeProviderOverride(): Promise<
   readonly CoreProviderModule[] | undefined
 > {
   const fixture = await loadValidatedFixture();
-  return fixture?.providerModules;
+  if (!fixture) return undefined;
+  return process.env.KUNAI_SMOKE_FAILOVER_PROVIDERS === "1"
+    ? [...fixture.providerModules, ...fixture.failoverProviderModules]
+    : fixture.providerModules;
 }
 
 /**

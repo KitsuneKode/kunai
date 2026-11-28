@@ -78,7 +78,7 @@ function usage(): never {
                            fixture providers (default: smoke); production is
                            the bundled roster behind the fixture catalog
   --mpv fake|none          PATH-shim fake mpv (default: none)
-  --fake-mpv-mode <m>      normal | fail-pre-loaded | hold
+  --fake-mpv-mode <m>      normal | fail-pre-loaded | hold | die-mid-stream
   --width N / --rows N     terminal size (default: 100x30)
   --set-env K=V            extra env for the session (repeatable)
   --network off|live       off (default) refuses non-loopback fetch; live is a dated run`);

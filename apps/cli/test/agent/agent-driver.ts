@@ -87,7 +87,7 @@ export interface AgentSessionOptions {
   readonly providers?: "smoke" | "production" | "none";
   /** `"fake"` PATH-shims the fake mpv so playback flows can run in-process. */
   readonly mpv?: "fake" | "none";
-  readonly fakeMpvMode?: "normal" | "fail-pre-loaded" | "hold";
+  readonly fakeMpvMode?: "normal" | "fail-pre-loaded" | "hold" | "die-mid-stream";
   /** Record a step journal (frame + DB delta per event) for evidence bundles. */
   readonly recordEvidence?: boolean;
   readonly extraEnv?: Record<string, string>;
