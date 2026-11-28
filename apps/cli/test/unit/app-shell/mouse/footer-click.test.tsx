@@ -128,8 +128,6 @@ test("clicking explicitly confirmed destructive footer chips injects y and Escap
     handle.click(chip("delete") ?? "missing");
     handle.click(chip("cancel") ?? "missing");
     expect(injected).toEqual(["y", "\x1b"]);
-    // Ink deliberately holds a lone Escape for its escape-sequence disambiguation
-    // window; the L2 wiring proofs drive the real end-to-end cancellation path.
     expect(keys).toEqual(["y"]);
   } finally {
     handle.unmount();

@@ -279,7 +279,6 @@ export function ListShell<T>({
         const targetId = confirmation.effect?.targetId;
         const selected = filteredOptions.find((option) => listShellOptionKey(option) === targetId);
         if (selected) {
-          confirm.transition({ type: "succeed" });
           setConfirmed(true);
           setTimeout(() => onSubmit(selected.value), 150);
         } else {

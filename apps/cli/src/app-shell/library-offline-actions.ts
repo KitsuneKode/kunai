@@ -25,18 +25,27 @@ export function executeLibraryDeletion(input: {
     return;
   }
   const groupEntryIds = group.entries.map((entry) => entry.jobId);
-  void deleteDownloads(input.container.downloadService, groupEntryIds, true).then((summary) => {
-    const removed = new Set(summary.removedJobIds);
-    input.setEntries((prev) => (prev ? prev.filter((entry) => !removed.has(entry.job.id)) : null));
-    input.container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: formatDownloadRemovalFeedback(summary),
+  void deleteDownloads(input.container.downloadService, groupEntryIds, true)
+    .then((summary) => {
+      const removed = new Set(summary.removedJobIds);
+      input.setEntries((prev) =>
+        prev ? prev.filter((entry) => !removed.has(entry.job.id)) : null,
+      );
+      input.container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: formatDownloadRemovalFeedback(summary),
+      });
+      const retained = summary.retained[0];
+      if (retained) input.confirm.transition({ type: "fail", message: retained.reason });
+      else input.confirm.transition({ type: "succeed" });
+      return undefined;
+    })
+    .catch((error) => {
+      input.confirm.transition({
+        type: "fail",
+        message: error instanceof Error ? error.message : "Unable to delete library files",
+      });
     });
-    const retained = summary.retained[0];
-    if (retained) input.confirm.transition({ type: "fail", message: retained.reason });
-    else input.confirm.transition({ type: "succeed" });
-    return undefined;
-  });
 }
 
 export function toggleLibraryCleanupProtection(input: {

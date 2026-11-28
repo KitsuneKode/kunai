@@ -27,7 +27,7 @@ export function executeDownloadConfirmation(input: {
         input.refresh();
         return undefined;
       })
-      .catch((error: Error) => {
+      .catch((error) => {
         input.confirm.transition({
           type: "fail",
           message: error instanceof Error ? error.message : "Unable to abort download",
@@ -36,8 +36,8 @@ export function executeDownloadConfirmation(input: {
     return;
   }
   const deleteArtifact = input.effect.verb === "delete files";
-  void deleteDownloads(input.container.downloadService, [job.id], deleteArtifact).then(
-    (summary) => {
+  void deleteDownloads(input.container.downloadService, [job.id], deleteArtifact)
+    .then((summary) => {
       input.refresh();
       input.container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
@@ -47,8 +47,13 @@ export function executeDownloadConfirmation(input: {
       if (retained) input.confirm.transition({ type: "fail", message: retained.reason });
       else input.confirm.transition({ type: "succeed" });
       return undefined;
-    },
-  );
+    })
+    .catch((error) => {
+      input.confirm.transition({
+        type: "fail",
+        message: error instanceof Error ? error.message : "Unable to remove download",
+      });
+    });
 }
 
 export function armDownloadConfirmation(input: {
