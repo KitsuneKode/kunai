@@ -22,6 +22,8 @@ export type ListShellActionContext = {
 
 export type ShellOption<T> = {
   readonly value: T;
+  /** Stable row identity for destructive confirmation; labels are the fallback. */
+  readonly id?: string;
   readonly label: string;
   readonly detail?: string;
   readonly previewImageUrl?: string;
@@ -31,6 +33,8 @@ export type ShellOption<T> = {
    * rather than only after it.
    */
   readonly disabled?: boolean;
-  /** Discards data or resets state; rendered in a warning tone. */
+  /** Discards data or resets state; rendered in a warning tone and confirmed inline. */
   readonly destructive?: boolean;
+  /** Imperative footer verb while armed (for example "remove" or "delete"). */
+  readonly confirmVerb?: string;
 };
