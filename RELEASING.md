@@ -32,6 +32,10 @@ This repo uses Changesets + Turborepo for versioning, changelogs, and release no
   - GitHub repository: `KitsuneKode/kunai`
   - Workflow path: `.github/workflows/release.yml` (workflow filename `release.yml`)
   - GitHub environment: `release-production`
+  - **Allow npm publish** must be ticked on every one of the eleven packages.
+    npm's current trusted-publisher form always permits `npm stage publish`;
+    direct publish is the separate opt-in. If only staging is allowed, the
+    protected job can stage immutable bytes that `npm view` never makes visible.
 - Configure the GitHub Actions environment `release-production` with required reviewers (publication waits on approval).
 - Do not configure or pass `NPM_TOKEN` / `NODE_AUTH_TOKEN` in the publish job.
   Trusted publishing authenticates the npm CLI through GitHub OIDC and requires
@@ -270,7 +274,19 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
    asynchronously — 0.3.0 saw one package take seven minutes to become
    visible — so the window backs off from 3s to 30s for about ten minutes, and
    a write is reissued only after a whole window still shows nothing (npm's
-   refusal to overwrite then counts as confirmation)
+   refusal to overwrite then counts as confirmation). A staged write is not a
+   publish: the publisher fails immediately rather than waiting or reissuing it
+
+   If the job stops with `npm STAGED <name>@<version> instead of publishing
+   it`, recover the exact staged package before rerunning the failed job:
+   either approve the existing stage with `npm stage list <name>` followed by
+   `npm stage approve <id>`, or download the
+   `kunai-release-candidate-<version>-<sha>` artifact and publish that exact
+   preserved tarball with `npm publish <tgz> --access public --otp=…`. The
+   launcher tarball is `kunai-npm.tgz`; platform tarballs are under
+   `npm-platform/`. Then rerun the failed job; unchanged packages reconcile as
+   already published and publication resumes at the missing ones.
+
 4. Retries `npm view` for the launcher and all ten platform packages until
    every exact version is visible, then performs a clean registry install and
    launcher smoke
