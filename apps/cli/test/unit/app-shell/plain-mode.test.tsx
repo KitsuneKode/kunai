@@ -867,7 +867,7 @@ describe("plain / screen-reader rendering across every shell surface", () => {
     expect(frame).toContain("1 issue");
     expect(frame).toContain("more above");
     expect(frame).toContain("more below");
-    expect(frame).toContain("Warning: Press x again to delete Andor");
+    expect(frame).toContain("Confirm: Delete Andor and all local files?");
     expect(frame).not.toMatch(PLAIN_MODE_GLYPHS);
   });
 });
@@ -1334,7 +1334,7 @@ describe("plain mode glyph guard", () => {
       expect(frame).toContain("favourite: yes");
       expect(frame).toContain("[expanded]");
       expect(frame).toContain("[collapsed]");
-      expect(frame).toContain("Warning:");
+      expect(frame).toContain("Focus: Confirmation");
       expect(frame).toContain("1/1 ready");
       expect(frame).toContain("[protected]");
       expect(frame).toContain("33%");
