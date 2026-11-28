@@ -338,6 +338,16 @@ function tmdbLaneResults(query: string): SearchResult[] {
       }),
     );
   }
+  if (q.includes("frieren")) {
+    out.push(
+      fixtureResult({
+        id: "tmdb:smoke-frieren-1",
+        type: "series",
+        title: "Frieren: Beyond Journey's End",
+        overview: "Compiled smoke catalog-search fallback",
+      }),
+    );
+  }
   if (
     COMPILED_SMOKE_FIXTURES.returnToShell.title.toLowerCase().includes(q) ||
     q.includes("shell")
@@ -356,6 +366,17 @@ function tmdbLaneResults(query: string): SearchResult[] {
 
 function anilistLaneResults(query: string): SearchResult[] {
   const q = query.toLowerCase();
+  if (q.includes("frieren")) {
+    return [
+      fixtureResult({
+        id: "anilist:smoke-frieren-1",
+        type: "series",
+        title: "Frieren: Beyond Journey's End",
+        overview: "Compiled smoke anime catalog-search fallback",
+        availableAudioModes: ["sub"],
+      }),
+    ];
+  }
   if (!(COMPILED_SMOKE_FIXTURES.anime.title.toLowerCase().includes(q) || q.includes("anime"))) {
     return [];
   }
