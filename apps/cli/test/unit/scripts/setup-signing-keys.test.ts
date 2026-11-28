@@ -79,8 +79,9 @@ describe("setup-signing-keys", () => {
   });
 
   test("private backups are owner-only and never overwritten", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "kunai-keys-backup-")), "keys");
-    dirs.push(dir);
+    const root = mkdtempSync(join(tmpdir(), "kunai-keys-backup-"));
+    dirs.push(root);
+    const dir = join(root, "keys");
     const material = generateSigningMaterial();
     const paths = writeBackups(dir, material);
     // Windows has no POSIX mode bits (chmod only toggles read-only); there the
