@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T15:51:12Z"
+lastReviewed: "2026-11-28T17:36:36Z"
 ---
 
 # Kunai — UX Architecture
@@ -472,16 +472,16 @@ Short-lived playback feedback should use mpv OSD plus shell status text for non-
 
 ## Settings Behavior
 
-- settings apply immediately after a row interaction commits
+- committing a settings row writes config immediately; the runtime effect follows the row's declared effect timing
 - A rejected settings save reports its error in the shelf and diagnostics.
   Immediate, debounced, and final-on-close saves share one rejection boundary;
   a final save after the shelf closes records diagnostics without updating it.
 - `Esc` cancels active text input, backs out of submenus, or closes the
   settings shelf; it does not roll back values already applied to config
 - label settings by effect timing:
-  - immediate
+  - immediate / applies now
   - next playback
-  - requires re-resolve
+  - next launch
 - avoid restart-required settings unless there is no safer option
 - recovery behavior should be configurable through explicit user-facing patterns rather than buried in hardcoded fallback logic
 
