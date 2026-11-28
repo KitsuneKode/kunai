@@ -1025,3 +1025,262 @@ describe("episode counts are whole numbers", () => {
     }
   });
 });
+
+function seriesDetail(
+  id: number,
+  name: string,
+  seasons: readonly {
+    readonly season_number: number;
+    readonly episode_count: number;
+    readonly name: string;
+    readonly air_date: string;
+    readonly poster_path: string | null;
+  }[],
+) {
+  return {
+    ...tmdbSeriesPayload({ id, name, seasons: [...seasons] }),
+    credits: { cast: [] },
+    external_ids: tmdbExternalIdsPayload(),
+    videos: { results: [] },
+  };
+}
+
+describe("title detail cache completeness and generation", () => {
+  test("a 503 on an undated season is not cached, so recovery within five minutes shows the season", async () => {
+    let seasonUp = false;
+    mockFetch((url) => {
+      if (url.includes("/tv/8800/season/1")) {
+        return seasonUp
+          ? jsonResponse({
+              season_number: 1,
+              episodes: [
+                { episode_number: 1, air_date: "2020-01-01", name: "Pilot", still_path: null },
+              ],
+            })
+          : new Response("unavailable", { status: 503 });
+      }
+      if (url.includes("/tv/8800")) {
+        return jsonResponse(
+          seriesDetail(8800, "Undated Show", [
+            {
+              season_number: 1,
+              episode_count: 1,
+              name: "Season 1",
+              air_date: "",
+              poster_path: null,
+            },
+          ]),
+        );
+      }
+      return null;
+    });
+
+    const hidden = await fetchTitleDetail("tmdb:8800", "series");
+    expect(hidden.seasons?.map((season) => season.season) ?? []).not.toContain(1);
+    expect(peekTitleDetail("tmdb:8800", "series")).toBeUndefined();
+
+    seasonUp = true;
+    clearTmdbSessionCache();
+    const recovered = await fetchTitleDetail("tmdb:8800", "series");
+    expect(recovered.seasons?.map((season) => season.season)).toEqual([1]);
+    expect(peekTitleDetail("tmdb:8800", "series")?.seasons?.map((season) => season.season)).toEqual(
+      [1],
+    );
+  });
+
+  test("an undated season body without an episodes array is not a complete detail", async () => {
+    mockFetch((url) => {
+      if (url.includes("/tv/8802/season/1")) return jsonResponse({});
+      if (url.includes("/tv/8802")) {
+        return jsonResponse(
+          seriesDetail(8802, "Shapeless Season", [
+            {
+              season_number: 1,
+              episode_count: 1,
+              name: "Season 1",
+              air_date: "",
+              poster_path: null,
+            },
+          ]),
+        );
+      }
+      return null;
+    });
+
+    const hidden = await fetchTitleDetail("tmdb:8802", "series");
+    expect(hidden.seasons?.map((season) => season.season) ?? []).not.toContain(1);
+    expect(peekTitleDetail("tmdb:8802", "series")).toBeUndefined();
+  });
+
+  test("an undated season with an empty episodes array is a complete empty answer", async () => {
+    mockFetch((url) => {
+      if (url.includes("/tv/8803/season/1")) return jsonResponse({ episodes: [] });
+      if (url.includes("/tv/8803")) {
+        return jsonResponse(
+          seriesDetail(8803, "Empty Season", [
+            {
+              season_number: 1,
+              episode_count: 1,
+              name: "Season 1",
+              air_date: "",
+              poster_path: null,
+            },
+          ]),
+        );
+      }
+      return null;
+    });
+
+    const detail = await fetchTitleDetail("tmdb:8803", "series");
+    expect(detail.seasons ?? []).toEqual([]);
+    expect(peekTitleDetail("tmdb:8803", "series")?.title).toBe("Empty Season");
+  });
+
+  test("a thumbnail failure still caches the detail", async () => {
+    mockFetch((url) => {
+      if (url.includes("/tv/8801/season/")) return new Response("no stills", { status: 503 });
+      if (url.includes("/tv/8801")) {
+        return jsonResponse(
+          seriesDetail(8801, "Dated Show", [
+            {
+              season_number: 1,
+              episode_count: 2,
+              name: "Season 1",
+              air_date: "2020-01-01",
+              poster_path: "/s1.jpg",
+            },
+          ]),
+        );
+      }
+      return null;
+    });
+
+    const detail = await fetchTitleDetail("tmdb:8801", "series");
+    expect(detail.seasons?.map((season) => season.season)).toEqual([1]);
+    expect(peekTitleDetail("tmdb:8801", "series")?.title).toBe("Dated Show");
+  });
+
+  test("a late detail does not overwrite a newer one", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<Response>();
+    let phase: "old" | "fresh" = "old";
+    mockFetch((url) => {
+      if (!url.includes("/movie/77")) return null;
+      if (phase === "old") {
+        started.resolve();
+        return release.promise;
+      }
+      return jsonResponse({
+        ...tmdbMoviePayload({ id: 77, title: "Fresh" }),
+        credits: { cast: [] },
+        external_ids: tmdbExternalIdsPayload(),
+        videos: { results: [] },
+      });
+    });
+
+    const late = fetchTitleDetail("tmdb:77", "movie");
+    await started.promise;
+    phase = "fresh";
+    clearTitleDetailCache();
+    const fresh = await fetchTitleDetail("tmdb:77", "movie");
+    expect(fresh.title).toBe("Fresh");
+    release.resolve(
+      jsonResponse({
+        ...tmdbMoviePayload({ id: 77, title: "Old" }),
+        credits: { cast: [] },
+        external_ids: tmdbExternalIdsPayload(),
+        videos: { results: [] },
+      }),
+    );
+    await late;
+    expect(peekTitleDetail("tmdb:77", "movie")?.title).toBe("Fresh");
+  });
+
+  test("title A's AniList failure does not block caching title B", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<Response>();
+    mockFetch((url) => {
+      if (url.includes("/movie/2")) {
+        started.resolve();
+        return release.promise;
+      }
+      if (url.includes("graphql.anilist.co")) throw new Error("AniList network down");
+      return null;
+    });
+
+    const loadingB = fetchTitleDetail("tmdb:2", "movie");
+    await started.promise;
+    await fetchTitleDetail("anilist:1", "series");
+    release.resolve(
+      jsonResponse({
+        ...tmdbMoviePayload({ id: 2, title: "Independent" }),
+        credits: { cast: [] },
+        external_ids: tmdbExternalIdsPayload(),
+        videos: { results: [] },
+      }),
+    );
+    const detailB = await loadingB;
+    expect(detailB.title).toBe("Independent");
+    expect(peekTitleDetail("tmdb:2", "movie")?.title).toBe("Independent");
+    expect(peekTitleDetail("anilist:1", "series")).toBeUndefined();
+  });
+
+  test("an anime title fetched through the crosswalk does not cache when TMDB fails", async () => {
+    bindTitleDetailCrosswalk(() => ({ tmdbId: "555" }));
+    let tmdbDown = true;
+    mockFetch((url) => {
+      if (url.includes("graphql.anilist.co")) {
+        return jsonResponse({ data: { Media: anilistMediaPayload() } });
+      }
+      if (url.includes("/tv/555")) {
+        return tmdbDown
+          ? new Response("down", { status: 503 })
+          : jsonResponse(
+              seriesDetail(555, "One Piece", [
+                {
+                  season_number: 1,
+                  episode_count: 7,
+                  name: "Season 1",
+                  air_date: "2008-01-20",
+                  poster_path: "/s1.jpg",
+                },
+              ]),
+            );
+      }
+      return null;
+    });
+
+    const degraded = await fetchTitleDetail("anilist:21", "series", undefined, { isAnime: true });
+    expect(degraded.title).toBe("One Piece");
+    expect(peekTitleDetail("anilist:21", "series")).toBeUndefined();
+
+    tmdbDown = false;
+    clearTmdbSessionCache();
+    const recovered = await fetchTitleDetail("anilist:21", "series", undefined, { isAnime: true });
+    expect(recovered.title).toBe("One Piece");
+    expect(peekTitleDetail("anilist:21", "series")?.title).toBe("One Piece");
+  });
+
+  test("an anime title fetched through the crosswalk does not cache when AniList fails", async () => {
+    bindTitleDetailCrosswalk(() => ({ tmdbId: "556" }));
+    let anilistDown = true;
+    mockFetch((url) => {
+      if (url.includes("graphql.anilist.co")) {
+        if (anilistDown) throw new Error("AniList network down");
+        return jsonResponse({ data: { Media: anilistMediaPayload({ id: 22 }) } });
+      }
+      if (url.includes("/tv/556")) return jsonResponse(seriesDetail(556, "From TMDB", []));
+      return null;
+    });
+
+    await fetchTitleDetail("anilist:22", "series", undefined, { isAnime: true });
+    expect(peekTitleDetail("anilist:22", "series")).toBeUndefined();
+
+    anilistDown = false;
+    resetAniListClientForTest();
+    clearTmdbSessionCache();
+    const recovered = await fetchTitleDetail("anilist:22", "series", undefined, { isAnime: true });
+    expect(recovered.sources).toContain("tmdb");
+    expect(peekTitleDetail("anilist:22", "series")).toBeDefined();
+  });
+});

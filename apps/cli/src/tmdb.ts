@@ -6,8 +6,14 @@
 // Results are memory-cached (per-session, never stale during a session).
 // =============================================================================
 
+import type { CacheGenerationToken } from "@/infra/concurrency/cache-generation";
 import { cleanEpisodeSynopsis, isPlaceholderEpisodeName } from "@/services/catalog/episode-display";
-import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
+import {
+  captureTmdbSessionGeneration,
+  commitTmdbSessionIfFresh,
+  fetchTmdbJsonCached,
+  isTmdbSessionCurrent,
+} from "@/services/catalog/tmdb-proxy";
 import {
   filterPlayableEpisodes,
   isDefinitelyFutureAirDate,
@@ -43,10 +49,27 @@ type SeasonSummaryCandidate = SeasonSummary & {
 
 export const MAX_TMDB_CACHE_ENTRIES = 100;
 
-// In-memory cache: `${tmdbId}:${season}` → EpisodeInfo[] (raw TMDB rows)
-const epCache = new Map<string, EpisodeInfo[]>();
-const seasonCache = new Map<string, SeasonSummary[]>();
+interface GenerationEntry<T> {
+  readonly token: CacheGenerationToken;
+  readonly value: T;
+}
+
+// In-memory cache: `${tmdbId}:${season}` → EpisodeInfo[] (raw TMDB rows).
+// Entries carry the session generation captured before the fetch, so a refresh
+// (clearTmdbSessionCache) drops them and a late answer cannot overwrite a newer one.
+const epCache = new Map<string, GenerationEntry<EpisodeInfo[]>>();
+const seasonCache = new Map<string, GenerationEntry<SeasonSummary[]>>();
 const showLanguageCache = new Map<string, string>();
+
+function readCurrent<T>(map: Map<string, GenerationEntry<T>>, key: string): T | undefined {
+  const entry = map.get(key);
+  if (!entry) return undefined;
+  if (!isTmdbSessionCurrent(entry.token)) {
+    map.delete(key);
+    return undefined;
+  }
+  return entry.value;
+}
 
 function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max = MAX_TMDB_CACHE_ENTRIES): void {
   if (map.size >= max && !map.has(key)) {
@@ -148,20 +171,25 @@ async function enrichEpisodesWithOriginalLanguage(
 
 async function fetchEpisodesRaw(tmdbId: string, season: number): Promise<EpisodeInfo[] | null> {
   const key = `${tmdbId}:${season}`;
-  const cachedEpisodes = epCache.get(key);
+  const cachedEpisodes = readCurrent(epCache, key);
   if (cachedEpisodes) return cachedEpisodes;
 
+  const token = captureTmdbSessionGeneration();
   try {
     const data = await fetchTmdbJsonCached(`/tv/${tmdbId}/season/${season}?language=en-US`);
     const payload = readRecord(data);
-    const episodes = Array.isArray(payload.episodes) ? payload.episodes.map(readRecord) : [];
+    // A 200 without an episodes array is a failed fetch, not an empty season.
+    if (!Array.isArray(payload.episodes)) return null;
+    const episodes = payload.episodes.map(readRecord);
     const eps = await enrichEpisodesWithOriginalLanguage(
       tmdbId,
       season,
       mapTmdbEpisodeRows(episodes),
     );
 
-    setBounded(epCache, key, eps);
+    commitTmdbSessionIfFresh(token, { complete: true }, () => {
+      setBounded(epCache, key, { token, value: eps });
+    });
     return eps;
   } catch {
     return null;
@@ -171,7 +199,7 @@ async function fetchEpisodesRaw(tmdbId: string, season: number): Promise<Episode
 async function resolvePlayableSeasonSummaries(
   tmdbId: string,
   candidates: readonly SeasonSummaryCandidate[],
-): Promise<SeasonSummary[]> {
+): Promise<{ readonly summaries: SeasonSummary[]; readonly complete: boolean }> {
   const definite = candidates.filter((summary) => !isDefinitelyFutureAirDate(summary.airDate));
   const needsVerification = definite.filter((summary) =>
     seasonSummaryNeedsEpisodeVerification(summary.airDate),
@@ -181,21 +209,29 @@ async function resolvePlayableSeasonSummaries(
   );
 
   if (needsVerification.length === 0) {
-    return knownPlayable.map(stripSeasonCandidate);
+    return { summaries: knownPlayable.map(stripSeasonCandidate), complete: true };
   }
 
   const verified = await Promise.all(
-    needsVerification.map(async (summary): Promise<SeasonSummary | null> => {
+    needsVerification.map(async (summary) => {
       const episodes = await fetchEpisodesRaw(tmdbId, summary.number);
-      return seasonHasPlayableEpisodes(episodes ?? []) ? stripSeasonCandidate(summary) : null;
+      // null is a failed season fetch (503), not "this season has no episodes".
+      if (episodes === null) return { summary: null, failed: true };
+      const playable = seasonHasPlayableEpisodes(episodes) ? stripSeasonCandidate(summary) : null;
+      return { summary: playable, failed: false };
     }),
   );
 
   const playable = [
     ...knownPlayable.map(stripSeasonCandidate),
-    ...verified.filter((summary): summary is SeasonSummary => summary !== null),
+    ...verified
+      .map((entry) => entry.summary)
+      .filter((summary): summary is SeasonSummary => summary !== null),
   ];
-  return playable.sort((left, right) => left.number - right.number);
+  return {
+    summaries: playable.sort((left, right) => left.number - right.number),
+    complete: verified.every((entry) => !entry.failed),
+  };
 }
 
 function stripSeasonCandidate(summary: SeasonSummaryCandidate): SeasonSummary {
@@ -210,9 +246,10 @@ function stripSeasonCandidate(summary: SeasonSummaryCandidate): SeasonSummary {
 // Returns null if both the proxy and direct TMDB API are unreachable.
 export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummary[] | null> {
   const key = tmdbId;
-  const cachedSeasons = seasonCache.get(key);
+  const cachedSeasons = readCurrent(seasonCache, key);
   if (cachedSeasons) return cachedSeasons;
 
+  const token = captureTmdbSessionGeneration();
   try {
     const data = await fetchTmdbJsonCached(`/tv/${tmdbId}`);
 
@@ -229,9 +266,11 @@ export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummar
       }))
       .sort((a, b) => a.number - b.number);
 
-    const summaries = await resolvePlayableSeasonSummaries(tmdbId, candidates);
-    setBounded(seasonCache, key, summaries);
-    return summaries;
+    const resolved = await resolvePlayableSeasonSummaries(tmdbId, candidates);
+    commitTmdbSessionIfFresh(token, { complete: resolved.complete }, () => {
+      setBounded(seasonCache, key, { token, value: resolved.summaries });
+    });
+    return resolved.summaries;
   } catch {
     return null;
   }
@@ -276,7 +315,7 @@ export function lookupCachedEpisode(
   season: number,
   episode: number,
 ): EpisodeInfo | undefined {
-  const cached = epCache.get(`${tmdbId}:${season}`);
+  const cached = readCurrent(epCache, `${tmdbId}:${season}`);
   if (!cached) return undefined;
   return filterPlayableEpisodes(cached).find((row) => row.number === episode);
 }
