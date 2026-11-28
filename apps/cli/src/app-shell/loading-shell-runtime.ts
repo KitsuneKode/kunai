@@ -164,18 +164,20 @@ export function stageDescription(stage: LoadingShellState["stage"]): string {
 export function renderStageRail(
   activeStage: LoadingShellStage,
   latestIssue: string | null | undefined,
+  headline?: string | null,
 ): StageRailItem[] {
   const issue = normalizeLoadingIssue(latestIssue);
   const activeIdx = STAGE_ORDER.indexOf(activeStage);
   // Unknown stage: treat as first stage active to avoid silent all-neutral rail
   const safeIdx = activeIdx === -1 ? 0 : activeIdx;
+  const activeLabel = headline?.trim() || "";
   return STAGE_ORDER.map((stage, i) => {
     if (i < safeIdx) {
       return { label: STAGE_LABELS[stage], glyph: "✓", tone: "success" };
     }
     if (i === safeIdx) {
       return {
-        label: STAGE_LABELS[stage],
+        label: activeLabel || STAGE_LABELS[stage],
         glyph: STAGE_GLYPHS[stage],
         tone: issue ? "warning" : "info",
       };

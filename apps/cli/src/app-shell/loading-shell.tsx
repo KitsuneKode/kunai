@@ -32,20 +32,23 @@ import type { StageRailItem } from "./loading-shell-runtime";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
 import { MouseTarget } from "./mouse/MouseRegions";
-import { plainModeEnabled, plainStageStatus, selectionPrefix } from "./plain-mode";
+import { plainModeEnabled, plainStageStatus } from "./plain-mode";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import {
   applyPlaybackShellInputEffect,
   resolvePlaybackShellInput,
   type PlaybackShellInputContext,
 } from "./playback-shell-input";
+import { PlaybackRecoveryView } from "./PlaybackRecoveryView";
+import { FailoverBanner } from "./primitives/FailoverBanner";
+import { failoverBannerModel } from "./primitives/FailoverBanner.model";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { useRootContentSuspended } from "./RootContentSuspension";
 import { GlimmerLabel, SakuraBloom } from "./SakuraLoader";
 import { useShellCommandModeOpen } from "./shell-command-mode";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
-import { padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
+import { sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 import { usePlayerKeyRequests } from "./use-player-key-requests";
@@ -214,116 +217,6 @@ function StageRail({ items }: { items: readonly StageRailItem[] }) {
     </Box>
   );
 }
-
-// ── Recovery view (§6) ────────────────────────────────────────────────────
-// Renders the Failure & Recovery surface per the Sakura canonical spec:
-//   • one primary safe verb (recover) dominant — never "next" primary after failure
-//   • crimson (danger) ONLY on the live fault line itself
-//   • preserved-progress fact inline so user knows progress is safe
-//   • secondary actions (fallback, sources) at normal weight
-//   • diagnostics behind [d] in dim, never in the primary column
-//
-// This replaces the generic StateBlock for the recovery path so the surface
-// carries the correct visual hierarchy without modifying shared primitives.
-const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
-  model,
-  state,
-  width,
-}: {
-  model: NonNullable<ReturnType<typeof buildPlaybackRecoveryViewModel>>;
-  state: Pick<LoadingShellState, "currentPosition" | "duration" | "progress">;
-  width: number;
-}) {
-  const plain = plainModeEnabled();
-  const { state: block } = model;
-  const isLiveFault = block.kind === "error";
-  const titleColor = isLiveFault ? palette.dangerText : palette.accentDeep;
-  const glyph = plain ? (isLiveFault ? "Error:" : "Recovery:") : isLiveFault ? "×" : "◐";
-
-  // Preserved-progress fact: show saved timestamp if we have finite evidence,
-  // else % if available. Null means nothing saved — the fallback below says so.
-  const hasPosition =
-    state.currentPosition !== undefined &&
-    Number.isFinite(state.currentPosition) &&
-    state.currentPosition > 0;
-  const hasProgress =
-    state.progress !== undefined && Number.isFinite(state.progress) && state.progress > 0;
-  const preservedFact: string | null = hasPosition
-    ? `${formatTimestamp(state.currentPosition ?? 0)} saved`
-    : hasProgress
-      ? `${Math.round(state.progress ?? 0)}% saved`
-      : null;
-
-  // Split actions: primary (recover), secondary (fallback, sources), diagnostic
-  const primaryAction = block.actions?.find((a) => a.id === "recover");
-  const secondaryActions =
-    block.actions?.filter((a) => a.id !== "recover" && a.id !== "diagnostics") ?? [];
-  const hasDiagnostics = block.actions?.some((a) => a.id === "diagnostics") ?? false;
-
-  const detailWidth = Math.max(10, width - 28);
-
-  return (
-    <Box flexDirection="column">
-      {/* Fault headline — crimson only if live (stalled/no-source/did-not-start) */}
-      <Text color={titleColor} bold>
-        {glyph} {block.title}
-      </Text>
-
-      {/* Preserved progress — the key trust signal */}
-      {preservedFact ? (
-        <Box marginTop={1}>
-          <Text color={palette.muted}>{"progress  "}</Text>
-          <Text color={palette.ok}>{preservedFact}</Text>
-          <Text color={palette.muted}>{" · "}</Text>
-          <Text color={palette.ok}>not marked watched</Text>
-        </Box>
-      ) : (
-        <Box marginTop={1}>
-          <Text color={palette.muted}>starting fresh · nothing saved yet</Text>
-        </Box>
-      )}
-
-      {/* Primary action — recover, dominant weight */}
-      {primaryAction ? (
-        <Box marginTop={1}>
-          <Text color={palette.accent} bold>
-            {selectionPrefix(true, plain)}
-          </Text>
-          <Text color={palette.accent} bold>
-            {padColumnsEnd(primaryAction.label, 16)}
-          </Text>
-          <Text color={palette.muted}>{truncateLine(primaryAction.detail ?? "", detailWidth)}</Text>
-          <Text color={palette.accent}>
-            {primaryAction.shortcut ? `  ${primaryAction.shortcut}` : ""}
-          </Text>
-        </Box>
-      ) : null}
-
-      {/* Secondary actions — fallback / sources, normal weight */}
-      {secondaryActions.length > 0 ? (
-        <Box flexDirection="column">
-          {secondaryActions.map((action) => (
-            <Box key={action.id}>
-              <Text color={palette.dim}>{"  "}</Text>
-              <Text color={palette.textDim}>{padColumnsEnd(action.label, 16)}</Text>
-              <Text color={palette.dim}>{truncateLine(action.detail ?? "", detailWidth)}</Text>
-              <Text color={palette.dim}>{action.shortcut ? `  ${action.shortcut}` : ""}</Text>
-            </Box>
-          ))}
-        </Box>
-      ) : null}
-
-      {/* Diagnostics — dim, behind [d], never primary */}
-      {hasDiagnostics ? (
-        <Box marginTop={1}>
-          <Text color={palette.dim} dimColor>
-            [d] diagnostics
-          </Text>
-        </Box>
-      ) : null}
-    </Box>
-  );
-});
 
 /**
  * The first-run key card. Renders nothing once the model retires it, so the
@@ -596,7 +489,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   ]);
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
-  const stageRailItems = renderStageRail(activeStage, loadingIssue);
+  const stageHeadline = (state.stageDetail || stageLabel(activeStage)).trim();
+  const stageRailItems = renderStageRail(activeStage, loadingIssue, stageHeadline);
   const providerDetail = normalizeProviderDetail(state.details);
   const subtitleTone = playbackSubtitleStatusTone(state.subtitleStatus ?? "");
   const subtitleColor = {
@@ -752,10 +646,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                   <Box flexDirection="column" flexGrow={1}>
                     <GlimmerLabel
-                      label={truncateLine(
-                        state.stageDetail || stageLabel(activeStage),
-                        Math.max(12, infoWidth),
-                      )}
+                      label={truncateLine(stageHeadline, Math.max(12, infoWidth))}
                       active={
                         waitingForPlayback &&
                         timerPolicy.animate &&
@@ -870,6 +761,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* Failure / recovery surface takes priority over the bare issue
                   line: it names what failed and offers recover/fallback/sources/
                   diagnostics. Falls back to the quiet warning when not a failure. */}
+                {state.failover ? (
+                  <FailoverBanner model={failoverBannerModel(state.failover)} />
+                ) : null}
                 {recoveryView ? (
                   <Box marginTop={1}>
                     <PlaybackRecoveryView model={recoveryView} state={state} width={infoWidth} />
@@ -987,7 +881,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                 )}
 
                 {/* Health/trouble only surfaces when there is something to act on. */}
-                {playbackTrouble ? (
+                {state.failover ? (
+                  <FailoverBanner model={failoverBannerModel(state.failover)} />
+                ) : playbackTrouble ? (
                   <Box marginTop={1} flexDirection="column">
                     <Text color={palette.dangerText} bold>
                       {plainModeEnabled()

@@ -23,7 +23,7 @@ test.each(["waiting", "playing", "failure", "covered", "reduced"] as const)(
             state={{
               title: "Motion fixture",
               operation: mode === "playing" ? "playing" : "resolving",
-              latestIssue: mode === "failure" ? "no source" : undefined,
+              failureClass: mode === "failure" ? "unknown" : undefined,
             }}
           />
         </RootContentSuspension>,

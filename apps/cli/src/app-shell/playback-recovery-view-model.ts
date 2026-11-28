@@ -1,4 +1,5 @@
 import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
+import type { PlaybackFailureClass } from "@/domain/playback/playback-failure-class";
 
 import { footerKeyFromBinding, KEYBINDINGS } from "./keybindings";
 import type { ActionRowModel } from "./primitives/ActionList.model";
@@ -10,37 +11,41 @@ export type PlaybackRecoveryViewModel = {
   readonly actions: readonly ActionRowModel[];
 };
 
-function normalizedIssue(state: LoadingShellState): string {
-  return state.latestIssue?.trim().toLowerCase() ?? "";
+type RecoveryBucket = "stalled" | "did-not-start";
+
+function bucketForFailureClass(failureClass: PlaybackFailureClass): RecoveryBucket | null {
+  switch (failureClass) {
+    case "network-buffering":
+    case "slow-stream":
+    case "seek-stuck":
+    case "ipc-stuck":
+    case "expired-stream":
+    case "video-lost":
+      return "stalled";
+    case "player-exited":
+    case "video-not-decoding":
+    case "unknown":
+      return "did-not-start";
+    case "none":
+      return null;
+  }
 }
 
 export function buildPlaybackRecoveryViewModel(
   state: LoadingShellState,
 ): PlaybackRecoveryViewModel | null {
-  const issue = normalizedIssue(state);
-  const stalled =
-    state.bufferHealth === "stalled" ||
-    issue.includes("stream stalled") ||
-    issue.includes("ipc stalled") ||
-    issue.includes("no playback progress");
-  const didNotStart =
-    issue.includes("playback did not start") ||
-    issue.includes("mpv did not start") ||
-    issue.includes("player did not start");
-  const noSource =
-    issue.includes("no source") ||
-    issue.includes("source unavailable") ||
-    issue.includes("quality variants unavailable");
-  // Deliberately NOT derived from `issue`. The healthy-path advisory note
-  // contains the word "fallback", so substring-matching it opened the recovery
-  // panel over successful resolves. Degradation is now structured evidence.
+  const fromClass = state.failureClass ? bucketForFailureClass(state.failureClass) : null;
+  const stalled = state.bufferHealth === "stalled" || fromClass === "stalled";
+  const didNotStart = !stalled && fromClass === "did-not-start";
   const degraded = state.problem?.severity === "recoverable";
   const classified = classifyProviderResolveUserState({ problem: state.problem });
+  const noSource = !stalled && !didNotStart && classified?.state === "no-playable-source";
 
   if (!stalled && !didNotStart && !noSource && !degraded && !classified) return null;
 
+  const hardFailure = stalled || didNotStart || noSource;
   const actions: ActionRowModel[] = [];
-  if (stalled || didNotStart || noSource) {
+  if (hardFailure) {
     actions.push({
       id: "recover",
       label: "Recover",
@@ -63,7 +68,7 @@ export function buildPlaybackRecoveryViewModel(
       tone: "warning",
     });
   }
-  if (stalled || didNotStart || noSource) {
+  if (hardFailure) {
     actions.push({
       id: "sources",
       label: "Sources",
@@ -89,13 +94,12 @@ export function buildPlaybackRecoveryViewModel(
 
   return {
     state: {
-      kind: stalled || didNotStart || noSource ? "error" : "info",
+      kind: hardFailure ? "error" : "info",
       title,
-      detail:
-        stalled || didNotStart || noSource
-          ? "Progress is preserved. Kunai will not mark this episode watched until playback recovers."
-          : (classified?.detail ??
-            "Kunai is trying a safer path. You can fallback or inspect diagnostics."),
+      detail: hardFailure
+        ? "Progress is preserved. Kunai will not mark this episode watched until playback recovers."
+        : (classified?.detail ??
+          "Kunai is trying a safer path. You can fallback or inspect diagnostics."),
       actions,
     },
     actions,
