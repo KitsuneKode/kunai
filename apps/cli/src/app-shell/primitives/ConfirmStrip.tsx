@@ -28,21 +28,13 @@ function stripLine(state: Exclude<ConfirmStripState, { kind: "idle" }>) {
 function plainStripLines(state: Exclude<ConfirmStripState, { kind: "idle" }>): readonly string[] {
   const label = sanitizeTerminalText(state.label);
   if (state.kind === "armed") {
-    return [
-      "Focus: Confirmation",
-      `Confirm: ${capitalize(state.verb)} ${label}?`,
-      `Actions: [y] ${state.verb}, [esc] cancel`,
-    ];
+    return ["Focus: Confirmation", `Confirm: ${capitalize(state.verb)} ${label}?`];
   }
   if (state.kind === "executing") {
     const executing = state.executingLabel ?? `${capitalize(state.verb)} ${label}`;
     return [`Focus: Confirmation`, `Status: ${sanitizeTerminalText(executing)}…`];
   }
-  return [
-    "Focus: Confirmation",
-    `Error: ${sanitizeTerminalText(state.message)}`,
-    "Actions: [esc] dismiss",
-  ];
+  return ["Focus: Confirmation", `Error: ${sanitizeTerminalText(state.message)}`];
 }
 
 /** Presentation for the destructive-confirmation state machine. */

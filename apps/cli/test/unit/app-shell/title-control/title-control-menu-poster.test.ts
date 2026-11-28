@@ -58,6 +58,9 @@ test("cache purges are marked destructive so the renderer can warn on them", () 
     "purge-title-cache",
     "reset-provider-health",
   ]);
+  for (const option of options.filter((candidate) => candidate.destructive)) {
+    expect(option.id).toBe(String(option.value));
+  }
 
   // And a row that merely plays something must not inherit the tone.
   expect(options.find((option) => option.value === "pick-episode")?.destructive).toBeUndefined();

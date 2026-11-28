@@ -216,6 +216,23 @@ describe("history delete UX", () => {
     const frame = captureFrame(<ConfirmStrip state={confirm.state} width={80} />, { columns: 100 });
     expect(frame).toContain("Delete Demo · S01E02?");
   });
+
+  test("plain ConfirmStrip leaves key narration to the footer", () => {
+    const saved = process.env.KUNAI_PLAIN;
+    process.env.KUNAI_PLAIN = "1";
+    try {
+      const confirm = armedConfirmStripHarness();
+      const frame = captureFrame(<ConfirmStrip state={confirm.state} width={80} />, {
+        columns: 100,
+      });
+      expect(frame).toContain("Focus: Confirmation");
+      expect(frame).toContain("Confirm: Delete Demo · S01E02?");
+      expect(frame).not.toContain("Actions:");
+    } finally {
+      if (saved === undefined) delete process.env.KUNAI_PLAIN;
+      else process.env.KUNAI_PLAIN = saved;
+    }
+  });
 });
 
 /** Typing a title to filter must not run row actions letter by letter. */
