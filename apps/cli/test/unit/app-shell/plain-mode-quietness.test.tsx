@@ -97,6 +97,7 @@ describe("plain quiet policy", () => {
     const synthetic = new Map([
       [
         "apps/cli/src/app-shell/synthetic-chime.tsx",
+        // sleep-allow: synthetic timer text for the quietness audit, not a wait this test runs
         "export function chime() { setInterval(() => setFrame(1), 80); }",
       ],
     ]);
@@ -108,6 +109,7 @@ describe("plain quiet policy", () => {
         new Map([
           [
             "apps/cli/src/app-shell/synthetic-chime.tsx",
+            // sleep-allow: synthetic timer text for the quietness audit, not a wait this test runs
             'export function chime() { if (plainTimerAllowed("decorative")) setInterval(() => setFrame(1), 80); }',
           ],
         ]),
