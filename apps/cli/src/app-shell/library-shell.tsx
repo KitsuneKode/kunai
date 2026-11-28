@@ -63,6 +63,7 @@ import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import { resolveEscStack, type EscLayer } from "./esc-stack";
 import { routeListFilterKey } from "./list-filter-keys";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
@@ -329,21 +330,21 @@ function LibraryTab({
   useInput(
     (input, key) => {
       priorPointerKey.current = null;
-      // Esc cancels an armed delete-confirm first (web-routing back: undo the
-      // pending state before leaving the surface). Only when nothing is armed does
-      // esc close the Library overlay.
+      // Esc is resolved in one place: an armed destructive action outranks a
+      // non-empty filter, and an empty filter focus is not a layer at all.
       if (key.escape) {
-        if (confirm.state.kind !== "idle") {
-          confirm.transition({ type: "cancel" });
-          return;
-        }
-        // Then leave the filter, then the surface.
-        if (filterFocused || filterQuery) {
+        const layers: EscLayer[] = [
+          ...(confirm.state.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
+          { kind: "filter", query: filterQuery },
+          { kind: "overlay" },
+        ];
+        const action = resolveEscStack(layers);
+        if (action === "cancel-confirmation") confirm.transition({ type: "cancel" });
+        if (action === "clear-filter") {
           setFilterFocused(false);
           setFilterQuery("");
-          return;
         }
-        onClose();
+        if (action === "close-overlay") onClose();
         return;
       }
       if (confirm.state.kind === "executing") return;

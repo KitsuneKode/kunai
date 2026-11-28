@@ -40,6 +40,7 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { resolveEscStack, type EscLayer } from "./esc-stack";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
@@ -376,11 +377,15 @@ export function DownloadManagerContent({
   useInput(
     (input, key) => {
       if (key.escape) {
-        if (confirm.state.kind !== "idle") {
+        const layers: EscLayer[] = [
+          ...(confirm.state.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
+          { kind: "overlay" },
+        ];
+        if (resolveEscStack(layers) === "cancel-confirmation") {
           confirm.transition({ type: "cancel" });
-          return;
+        } else {
+          onClose();
         }
-        onClose();
         return;
       }
       if (confirm.state.kind === "executing") return;

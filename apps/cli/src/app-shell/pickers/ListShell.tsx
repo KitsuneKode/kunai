@@ -34,6 +34,7 @@ import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-t
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
 
+import { resolveEscStack, type EscLayer } from "../esc-stack";
 import { ConfirmStrip } from "../primitives/ConfirmStrip";
 import { confirmStripFooterActions, confirmStripOwnsInput } from "../primitives/ConfirmStrip.model";
 import { SakuraPetal } from "../primitives/SakuraPetal";
@@ -251,12 +252,27 @@ export function ListShell<T>({
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
 
+    if (key.escape) {
+      const layers: EscLayer[] = [
+        ...(confirm.state.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
+        ...(commandMode
+          ? [{ kind: "prompt" } as const]
+          : [{ kind: "filter", query: filterQuery } as const, { kind: "picker" } as const]),
+      ];
+      const action = resolveEscStack(layers);
+      if (action === "cancel-confirmation") confirm.transition({ type: "cancel" });
+      if (action === "cancel-prompt") {
+        // Close only — the draft survives so a `/` reopen resumes the query.
+        setCommandMode(false);
+        setHighlightedCommandIndex(0);
+      }
+      if (action === "clear-filter") setFilterQuery("");
+      if (action === "cancel-picker") onCancel();
+      return;
+    }
+
     if (confirm.state.kind !== "idle") {
       if (confirm.state.kind === "executing") return;
-      if (key.escape) {
-        confirm.transition({ type: "cancel" });
-        return;
-      }
       if (confirm.state.kind === "armed" && input.toLowerCase() === "y") {
         const confirmation = confirm.transition({ type: "confirm" });
         const targetId = confirmation.effect?.targetId;
@@ -277,12 +293,6 @@ export function ListShell<T>({
     if (commandMode) {
       const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
 
-      if (key.escape) {
-        // Close only — the draft survives so a `/` reopen resumes the query.
-        setCommandMode(false);
-        setHighlightedCommandIndex(0);
-        return;
-      }
       if (key.return) {
         activateListPalette(highlightedCommandIndex);
         return;
@@ -324,14 +334,6 @@ export function ListShell<T>({
       return;
     }
 
-    if (key.escape) {
-      if (filterQuery.length > 0) {
-        setFilterQuery("");
-        return;
-      }
-      onCancel();
-      return;
-    }
     if (key.return) {
       const selected = filteredOptions[index];
       if (selected && !confirmed) {
