@@ -943,3 +943,54 @@ describe("agent wiring · setup owns the machine verdict", () => {
     );
   }, 45_000);
 });
+
+describe("agent wiring · relaunch", () => {
+  it("starts playback after relaunch and keeps what the profile already stored", async () => {
+    // #848: relaunch() stopped the player, then built the next session on that
+    // same container, so the next play reached `ready` and never spawned mpv.
+    // A restart is a new container on the same profile directory. beforeMount
+    // does not run again, so this queue row is visible only if the profile survived.
+    const session = await createAgentSession({ label: "wiring-relaunch", mpv: "fake" });
+    try {
+      await session.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      session.press("smoke", K.enter);
+      await session.waitForFrame((f) => f.includes("Smoke"), "fixture results");
+      await session.waitSettled();
+      session.press("q");
+      await session.waitForBackend(
+        (i) => i.queue().some((row) => row.title_id === "tmdb:smoke-movie-1"),
+        "queue row committed before relaunch",
+      );
+
+      const firstRelaunch = session.relaunch();
+      const overlappedRelaunch = session.relaunch();
+      await Promise.all([firstRelaunch, overlappedRelaunch]);
+      await session.waitForFrame((f) => f.includes("Search title"), "browse after relaunch");
+      // The overlapped call waited for the first. It did not retire a second container.
+      expect(session.containerDisposalCounts()).toEqual([1]);
+      expect(
+        session
+          .inspect()
+          .queue()
+          .some((row) => row.title_id === "tmdb:smoke-movie-1"),
+      ).toBe(true);
+
+      await session.waitSettled();
+      session.press("smoke", K.enter);
+      await session.waitForFrame((f) => f.includes("Smoke"), "fixture results after relaunch");
+      await session.waitSettled();
+      session.press(K.enter);
+      await session.waitForFrame((f) => f.includes("Post-play"), "post-play");
+      // The relaunch retired the container it stopped. The one that just played
+      // is still live, so dispose() has to retire that one — once.
+      expect(session.containerDisposalCounts()).toEqual([1]);
+      session.assertPrivacyClean();
+      await session.dispose();
+      expect(session.containerDisposalCounts()).toEqual([1, 1]);
+      await session.dispose();
+      expect(session.containerDisposalCounts()).toEqual([1, 1]);
+    } finally {
+      await session.dispose();
+    }
+  }, 60_000);
+});
