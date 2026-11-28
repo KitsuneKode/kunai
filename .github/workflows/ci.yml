@@ -1025,8 +1025,8 @@ jobs:
             chmod 755 "apps/cli/dist/bin/$bin"
           done
           bun run --cwd apps/cli build:npm-platform
-          bun run release:prepare
           bun run release:pack
+          bun run release:prepare
 
       - name: Dry-run publication reconciliation against the packed candidate
         run: bun run scripts/publish-npm-release.ts --dry-run

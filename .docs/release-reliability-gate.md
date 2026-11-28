@@ -51,8 +51,10 @@ Pull requests that touch the release-only surface (`.github/workflows/release.ym
 `scripts/packaging/**`, or `.github/scripts/**`) run the CI `Release script PR
 smoke` job. The job uses the release Node pin, shell-checks `.github/scripts`,
 runs the evidence/publication parser contracts, packs a lightweight local
-candidate, and executes `scripts/publish-npm-release.ts --dry-run` against those
-preserved tarballs without publishing. This keeps release-only script drift on
+candidate in release order (`release:pack` before `release:prepare`, because
+preparation validates the preserved launcher tarball), and executes
+`scripts/publish-npm-release.ts --dry-run` against those preserved tarballs
+without publishing. This keeps release-only script drift on
 PR CI instead of discovering it during the frozen release train.
 
 The release workflow additionally opens the exact preserved

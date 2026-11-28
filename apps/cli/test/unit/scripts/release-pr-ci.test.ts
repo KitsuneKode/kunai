@@ -24,6 +24,9 @@ test("release-only script changes run a fast PR smoke job", () => {
   expect(workflow).toContain("test/unit/scripts/publish-npm-release.test.ts");
   expect(workflow).toContain("bun run release:prepare");
   expect(workflow).toContain("bun run release:pack");
+  expect(workflow.indexOf("bun run release:pack")).toBeLessThan(
+    workflow.indexOf("bun run release:prepare"),
+  );
   expect(workflow).toContain("bun run scripts/publish-npm-release.ts --dry-run");
   expect(workflow).toContain("release-scripts,");
 });
