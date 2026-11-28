@@ -41,6 +41,24 @@ function seasonPayload(name: string) {
 }
 
 describe("TMDB season memory cache stays behind a failed or superseded fetch", () => {
+  test("a 200 season without an episodes array is not kept in the session cache", async () => {
+    let seasonUp = false;
+    install((url) => {
+      if (url.includes("/tv/902/season/1")) {
+        return seasonUp ? Response.json(seasonPayload("Pilot")) : Response.json({});
+      }
+      return new Response("missing", {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    expect(await fetchEpisodes("902", 1)).toBeNull();
+    seasonUp = true;
+    // No clearTmdbSessionCache here: recovery must not need a manual refresh.
+    expect((await fetchEpisodes("902", 1))?.map((episode) => episode.number)).toEqual([1]);
+  });
+
   test("a 503 on an undated season is not cached, so recovery shows the season", async () => {
     let seasonUp = false;
     install((url) => {

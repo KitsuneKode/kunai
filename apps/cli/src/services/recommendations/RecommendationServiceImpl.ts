@@ -360,7 +360,10 @@ export class RecommendationServiceImpl implements RecommendationService {
     if (!tvOk && !movieOk) return this.staleSection(key, "genre-affinity");
 
     const seen = new Set<string>();
-    const items = [...(tvData?.results ?? []), ...(movieData?.results ?? [])]
+    // Only a validated half is merged; spreading a malformed `results` would throw.
+    const tvResults = tvOk && tvData?.results ? tvData.results : [];
+    const movieResults = movieOk && movieData?.results ? movieData.results : [];
+    const items = [...tvResults, ...movieResults]
       .map((r) => toSearchResult(r, r["title"] ? "movie" : "tv"))
       .filter((r): r is SearchResult => r !== null)
       .filter((item) => {

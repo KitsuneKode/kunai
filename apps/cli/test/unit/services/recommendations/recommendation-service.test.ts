@@ -550,6 +550,26 @@ describe("a late recommendation write cannot undo a refresh", () => {
     }
   });
 
+  test("a malformed discover half is dropped, not spread, so the valid half still answers", async () => {
+    const originalFetch = globalThis.fetch;
+    setSystemTime(new Date(frozen));
+    const store = repository();
+    const service = new RecommendationServiceImpl(store);
+    globalThis.fetch = createFetchDouble(async (request) => {
+      const url = String(request);
+      if (url.includes("/discover/movie")) return Response.json({ results: {} });
+      if (url.includes("/discover/tv")) return Response.json({ results: [titled("TV Hit", 4)] });
+      return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+    });
+    try {
+      const section = await service.getGenreAffinity([18]);
+      expect(section.items.map((item) => item.title)).toEqual(["TV Hit"]);
+      expect(store.get(buildRecommendCacheKey("18", "genre-affinity"))).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("a discover call that loses the movie or tv half is not cached for the freshness window", async () => {
     const originalFetch = globalThis.fetch;
     setSystemTime(new Date(frozen));

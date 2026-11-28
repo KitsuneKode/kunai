@@ -395,7 +395,11 @@ export async function fetchTmdbJsonCached(
       // A request cleared mid-flight still answers its waiters, but must not
       // repopulate either cache: the refresh asked for answers fetched after it.
       sessionGate.commitIfFresh(generation, {}, () => {
-        sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
+        // A season answer without an episodes array is a broken 200, not data:
+        // keeping it would serve it again after TMDB recovers.
+        if (!isSeasonPath(normalized) || isUsableDurableAnswer(normalized, value)) {
+          sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
+        }
         // Only a well-formed answer may replace the last good copy.
         if (durable && isUsableDurableAnswer(normalized, value)) {
           durable.write(normalized, Date.now(), value);
