@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T17:05:15Z"
+lastReviewed: "2026-11-28T11:34:10Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -338,7 +338,15 @@ absolute is a configuration error, never a fallthrough, and nothing migrates
 between roots — unset the variable to return to platform defaults. With
 `profileDir` set, `createCredentialVault` is always the file vault (OS vaults
 are account-wide) and the installer launcher lands under `<root>/bin`, outside
-the removable siblings. User-facing semantics:
+the removable siblings. On Windows a versioned payload at
+`<root>\data\versions\<semver>\kunai.exe` is classified from evidence before
+startup binds a profile: an explicit override wins; a valid
+`<root>\.kunai-profile` marker proves a profile; with no marker, the default
+`%APPDATA%\kunai\install.json` proves a normal native install when it names
+that payload or a sibling in the same physical `versions` directory; missing or
+contradictory evidence is an ambiguity error, never a guess. The read-only
+`--version` fast path skips this inference because installer smoke checks run it
+before a fresh manifest exists. User-facing semantics:
 `docs/users/install-and-update.mdx` → “Custom profile root”.
 
 **Continuation launches** (History, inline Continue, Calendar) select the title
