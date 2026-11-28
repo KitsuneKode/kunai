@@ -35,7 +35,7 @@ import {
 } from "@/domain/catalog/title-detail";
 import { upgradeContentTypeFromAniListFormat } from "@/domain/media/anilist-format";
 import type { ContentType } from "@/domain/types";
-import { dbg } from "@/logger";
+import { createCacheGenerationGate } from "@/infra/concurrency/cache-generation";
 import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
@@ -50,6 +50,7 @@ import type { ProviderExternalIds } from "@kunai/types";
 import { isJsonObject } from "@kunai/types";
 
 import { aniListExternalLinks, tmdbExternalLinks, toTrailerUrl } from "./title-detail-extras";
+import { dedupe, readEpisodeCount, readRecord, readString } from "./title-detail-read";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -97,9 +98,15 @@ export function isTitleDetailCrosswalkBound(): boolean {
 const CACHE_TTL_MS = 5 * 60 * 1_000;
 // Bounded session cache — long browse/search sessions visit hundreds of titles.
 const MAX_DETAIL_CACHE_ENTRIES = 256;
-/** Count of AniList detail fetches that failed in a retryable way (see fetchTitleDetail). */
-let degradedAniListFetches = 0;
+/** Bumped by clearTitleDetailCache so a late detail cannot overwrite a newer one. */
+const detailWrites = createCacheGenerationGate();
 const detailCache = new Map<string, CacheEntry>();
+
+interface SourcedFetch<T> {
+  readonly detail: T | null;
+  /** False when an attempted catalog fetch failed transiently. */
+  readonly complete: boolean;
+}
 
 function cacheKey(id: string, type: ContentType): string {
   return `${type}:${id}`;
@@ -108,6 +115,7 @@ function cacheKey(id: string, type: ContentType): string {
 /** Clear the session cache (for testing or manual refresh). */
 export function clearTitleDetailCache(): void {
   detailCache.clear();
+  detailWrites.invalidate();
   clearTmdbSessionCache();
 }
 
@@ -152,17 +160,24 @@ export async function fetchTitleDetail(
     return mergeDetails(id, type, null, null);
   }
 
-  const degradedBefore = degradedAniListFetches;
-  const detail = await resolveTitleDetail(id, type, signal, hints);
+  const token = detailWrites.capture();
+  const resolved = await resolveTitleDetail(id, type, signal, hints);
+  const detail = resolved.detail;
   // A detail built while a catalog was unreachable, rate-limited, or aborted
   // produces an empty placeholder ("Unknown") with no contributing sources;
   // caching it would hide the title's metadata for the full TTL after recovery.
+  // A transient failure of either catalog, or of an undated-season check, is
+  // the same kind of hole: the other title's failure must not count here.
   const hasRealSource = detail.sources !== undefined && detail.sources.length > 0;
-  if (!signal?.aborted && hasRealSource && degradedAniListFetches === degradedBefore) {
-    const storedAt = Date.now();
-    detailCache.set(key, { detail, expiresAt: storedAt + CACHE_TTL_MS });
-    evictOverflowedEntries(detailCache, MAX_DETAIL_CACHE_ENTRIES, storedAt);
-  }
+  detailWrites.commitIfFresh(
+    token,
+    { signal, complete: resolved.complete && hasRealSource },
+    () => {
+      const storedAt = Date.now();
+      detailCache.set(key, { detail, expiresAt: storedAt + CACHE_TTL_MS });
+      evictOverflowedEntries(detailCache, MAX_DETAIL_CACHE_ENTRIES, storedAt);
+    },
+  );
   return detail;
 }
 
@@ -190,7 +205,7 @@ async function resolveTitleDetail(
   type: ContentType,
   signal?: AbortSignal,
   hints?: TitleDetailHints,
-): Promise<TitleDetail> {
+): Promise<{ readonly detail: TitleDetail; readonly complete: boolean }> {
   // An explicit AniList id (from id prefix or the calling title's externalIds)
   // is authoritative for anime — including when the id is a bare number that
   // would otherwise be mistaken for a TMDB id.
@@ -219,38 +234,35 @@ async function resolveTitleDetail(
     tmdbId = crosswalkTmdbId;
   }
 
-  // Determine what to fetch in parallel
-  const fetches: Promise<unknown>[] = [];
-  let tmdbFetch: Promise<TmdbDetailResult | null> | null = null;
-  let anilistFetch: Promise<AniListDetailResult | null> | null = null;
+  // Determine what to fetch in parallel. A catalog we did not attempt is complete.
+  let tmdbFetch: Promise<SourcedFetch<TmdbDetailResult>> | null = null;
+  let anilistFetch: Promise<SourcedFetch<AniListDetailResult>> | null = null;
 
-  if (tmdbId) {
-    tmdbFetch = fetchTmdbDetail(tmdbId, type, signal);
-    fetches.push(tmdbFetch);
-  }
-
-  // AniList is relevant when we have an explicit anilistId, or for an anime
-  // series that lacks a TMDB id to anchor on.
-  if (anilistId) {
-    anilistFetch = fetchAniListDetail(anilistId, signal);
-    fetches.push(anilistFetch);
-  }
+  if (tmdbId) tmdbFetch = fetchTmdbDetail(tmdbId, type, signal);
+  // AniList is relevant when we have an explicit anilistId.
+  if (anilistId) anilistFetch = fetchAniListDetail(anilistId, signal);
 
   // If we have a tmdbId but this might be anime, also fetch AniList via
   // the externalId lookup (TMDB exposes anilist ID in external_ids endpoint).
   // We do that in a second wave after TMDB returns so we know if it is anime.
-
-  await Promise.allSettled(fetches);
-
-  const tmdb = tmdbFetch ? await tmdbFetch.catch(() => null) : null;
-  let anilist = anilistFetch ? await anilistFetch.catch(() => null) : null;
-
-  // Second-wave: if TMDB returned an anilist_id in its external IDs, fetch it
-  if (tmdb && !anilist && tmdb.externalIds?.anilistId) {
-    anilist = await fetchAniListDetail(tmdb.externalIds.anilistId, signal).catch(() => null);
+  const [tmdbOutcome, anilistFirst] = await Promise.all([
+    tmdbFetch ?? Promise.resolve({ detail: null, complete: true }),
+    anilistFetch ?? Promise.resolve({ detail: null, complete: true }),
+  ]);
+  let anilistOutcome = anilistFirst;
+  if (
+    tmdbOutcome.detail &&
+    !anilistOutcome.detail &&
+    anilistOutcome.complete &&
+    tmdbOutcome.detail.externalIds?.anilistId
+  ) {
+    anilistOutcome = await fetchAniListDetail(tmdbOutcome.detail.externalIds.anilistId, signal);
   }
 
-  return mergeDetails(id, type, tmdb, anilist);
+  return {
+    detail: mergeDetails(id, type, tmdbOutcome.detail, anilistOutcome.detail),
+    complete: tmdbOutcome.complete && anilistOutcome.complete,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +434,7 @@ async function fetchTmdbDetail(
   tmdbId: string,
   type: ContentType,
   signal?: AbortSignal,
-): Promise<TmdbDetailResult | null> {
+): Promise<SourcedFetch<TmdbDetailResult>> {
   const mediaType = type === "movie" ? "movie" : "tv";
 
   // One consolidated call: detail + credits + external IDs + videos (trailer). This
@@ -432,7 +444,8 @@ async function fetchTmdbDetail(
     `/${mediaType}/${tmdbId}?append_to_response=${appended}`,
     signal,
   ).catch(() => null);
-  if (!detail) return null;
+  if (!detail) return { detail: null, complete: false };
+  let seasonsComplete = true;
 
   const d = readRecord(detail);
   const credits = readRecord(d.credits);
@@ -505,13 +518,17 @@ async function fetchTmdbDetail(
 
         ambiguousResults.forEach((result, idx) => {
           const entry = ambiguousSeasons[idx];
-          if (!entry || result.status !== "fulfilled" || !result.value) return;
-
+          if (!entry) return;
+          const sd =
+            result.status === "fulfilled" && result.value ? readRecord(result.value) : null;
+          if (!sd || !Array.isArray(sd.episodes)) {
+            seasonsComplete = false;
+            return;
+          }
           const { seasonNum, seasonMeta } = entry;
           const posterPath = readString(seasonMeta.poster_path);
-          const sd = readRecord(result.value);
           fetchedSeasonPayloads.set(seasonNum, sd);
-          const episodes = Array.isArray(sd.episodes) ? sd.episodes.map(readRecord) : [];
+          const episodes = sd.episodes.map(readRecord);
           const playableEpisodes = filterPlayableEpisodes(
             episodes.map((ep) => ({
               number: Number(ep.episode_number),
@@ -649,28 +666,31 @@ async function fetchTmdbDetail(
       : undefined;
 
   return {
-    title: readString(d.title) || readString(d.name) || "Unknown",
-    year,
-    synopsis: readString(d.overview) || undefined,
-    genres: genres.length ? genres : undefined,
-    studios: studios.length ? studios : undefined,
-    runtimeMinutes,
-    contentRating,
-    releaseDate,
-    status,
-    seasonCount,
-    episodeCount,
-    seasons,
-    cast: cast.length ? cast : undefined,
-    artwork,
-    externalIds: {
-      tmdbId: tmdbIdStr,
-      ...(imdbId ? { imdbId } : null),
-      ...(anilistId ? { anilistId } : null),
+    detail: {
+      title: readString(d.title) || readString(d.name) || "Unknown",
+      year,
+      synopsis: readString(d.overview) || undefined,
+      genres: genres.length ? genres : undefined,
+      studios: studios.length ? studios : undefined,
+      runtimeMinutes,
+      contentRating,
+      releaseDate,
+      status,
+      seasonCount,
+      episodeCount,
+      seasons,
+      cast: cast.length ? cast : undefined,
+      artwork,
+      externalIds: {
+        tmdbId: tmdbIdStr,
+        ...(imdbId ? { imdbId } : null),
+        ...(anilistId ? { anilistId } : null),
+      },
+      score,
+      trailerUrl,
+      externalLinks: externalLinks.length ? externalLinks : undefined,
     },
-    score,
-    trailerUrl,
-    externalLinks: externalLinks.length ? externalLinks : undefined,
+    complete: seasonsComplete,
   };
 }
 
@@ -773,24 +793,32 @@ query($id: Int) {
 }
 `;
 
+function anilistFailureIsTransient(error: Error): boolean {
+  if (!(error instanceof AniListRequestError)) return true;
+  if (error.kind !== "http") return true;
+  return (error.status ?? 500) >= 500;
+}
+
 async function fetchAniListDetail(
   anilistId: string,
   signal?: AbortSignal,
-): Promise<AniListDetailResult | null> {
+): Promise<SourcedFetch<AniListDetailResult>> {
   // Shared client: rate-limit cooldown, dedupe, bounded timeout. Any failure
-  // means "no AniList detail", exactly as before; a retryable one is counted
-  // so the caller does not cache the placeholder it produces.
+  // means "no AniList detail". A transient one must not be cached; an HTTP 4xx
+  // is that id's real answer and may be.
+  let transient = false;
   const json = await postAniListGraphql(
     { query: ANILIST_DETAIL_QUERY, variables: { id: Number(anilistId) } },
     { signal, timeoutMs: FETCH_TIMEOUT_MS },
   ).catch((error: Error) => {
-    if (error instanceof AniListRequestError && error.kind !== "http") degradedAniListFetches += 1;
+    transient = anilistFailureIsTransient(error);
     return null;
   });
-  const data = json && isJsonObject(json.data) ? json.data : null;
+  if (transient || !json) return { detail: null, complete: !transient };
+  const data = isJsonObject(json.data) ? json.data : null;
 
   const media = readRecord(data?.Media);
-  if (!media.id) return null;
+  if (!media.id) return { detail: null, complete: true };
 
   const title =
     readString(media.title && readRecord(media.title).english) ||
@@ -883,25 +911,28 @@ async function fetchAniListDetail(
   const externalLinks = aniListExternalLinks(externalLinksRaw, malId);
 
   return {
-    title,
-    year,
-    synopsis,
-    genres: genres.length ? genres : undefined,
-    studios: studios.length ? studios : undefined,
-    runtimeMinutes,
-    releaseDate,
-    status,
-    episodeCount,
-    format,
-    cast: cast.length ? cast : undefined,
-    artwork,
-    externalIds: {
-      anilistId: anilistIdStr,
-      ...(malId ? { malId } : null),
+    detail: {
+      title,
+      year,
+      synopsis,
+      genres: genres.length ? genres : undefined,
+      studios: studios.length ? studios : undefined,
+      runtimeMinutes,
+      releaseDate,
+      status,
+      episodeCount,
+      format,
+      cast: cast.length ? cast : undefined,
+      artwork,
+      externalIds: {
+        anilistId: anilistIdStr,
+        ...(malId ? { malId } : null),
+      },
+      score,
+      trailerUrl,
+      externalLinks: externalLinks.length ? externalLinks : undefined,
     },
-    score,
-    trailerUrl,
-    externalLinks: externalLinks.length ? externalLinks : undefined,
+    complete: true,
   };
 }
 
@@ -954,53 +985,4 @@ function extractTmdbId(id: string): string | null {
 function extractAnilistId(id: string): string | null {
   const match = /^anilist:(\d+)$/.exec(id);
   return match?.[1] ?? null;
-}
-
-// ---------------------------------------------------------------------------
-// Util
-// ---------------------------------------------------------------------------
-
-/**
- * An episode count is a whole number of episodes.
- *
- * `Number(...)` and a bare `typeof === "number"` both let a fractional or
- * absurd upstream value through, and it rendered verbatim in the details rail —
- * "episodes 448.2" is never a thing a catalog can truthfully say. Anything that
- * is not a positive integer is dropped so the row is omitted, which reads as
- * "unknown" rather than as a wrong fact.
- */
-function readEpisodeCount(
-  value: unknown,
-  provenance?: { readonly site: "tmdb-season" | "anilist-media"; readonly titleId: string },
-): number | undefined {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    // A present-but-invalid count is upstream corruption — log the provenance
-    // (site + raw value + title) so the producer can be named. #273 rendered
-    // "episodes 448.2"; this record is how the next one gets traced.
-    if (value !== undefined && value !== null && value !== "") {
-      dbg("title-detail", "episodeCount rejected: non-integer upstream value", {
-        site: provenance?.site,
-        titleId: provenance?.titleId,
-        valueType: typeof value,
-        value: String(value).slice(0, 64),
-      });
-    }
-    return undefined;
-  }
-  return parsed;
-}
-
-function readRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function readString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function dedupe(arr: string[]): string[] {
-  return [...new Set(arr)];
 }

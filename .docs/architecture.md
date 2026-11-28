@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T13:20:00Z"
+lastReviewed: "2026-11-28T14:41:44Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -214,7 +214,7 @@ the URL is blocked, sources are walked, a 4K rung steps down, then one provider
 hop, and every attempt starts at `recoveryStartIntent`. That is the reached
 position without a prompt, or the attempt's own intended start when the failed
 source never reached it. A mid-stream notice keeps that position (`preservedSeconds`)
-and uses tone `warn` while another named provider or source remains. A provider hop the user asks for (⇧F) still offers the
+and uses tone `warn` while another named provider or source remains. Publishing that notice sets `failoverAwaitingPlayback`. The notice stays through the publish, including when status is already `playing`, and the next `SET_PLAYBACK_STATUS` of `playing` clears it. A startup notice with no destination (`toLabel` null, error tone) does not set the flag: it stays until the user acts or playback leaves (`idle` or `finished`). A provider hop the user asks for (⇧F) still offers the
 position as a prompt, since another provider's cut can differ. `recoveryMode:
 "manual"` never hops providers automatically.
 
@@ -349,7 +349,17 @@ absolute is a configuration error, never a fallthrough, and nothing migrates
 between roots — unset the variable to return to platform defaults. With
 `profileDir` set, `createCredentialVault` is always the file vault (OS vaults
 are account-wide) and the installer launcher lands under `<root>/bin`, outside
-the removable siblings. User-facing semantics:
+the removable siblings. On Windows a versioned payload at
+`<root>\data\versions\<semver>\kunai.exe` is classified from evidence before
+startup binds a profile: an explicit override wins; a valid
+`<root>\.kunai-profile` marker proves a profile; with no marker, the default
+`%APPDATA%\kunai\install.json` proves a normal native install when it names
+that payload or a sibling in the same physical `versions` directory; missing or
+contradictory evidence is an ambiguity error, never a guess. A bare
+`kunai --version` (or `-v`, with no other argument) skips this inference because
+installer smoke checks run exactly that before a fresh manifest exists; any other
+argument keeps it, so `kunai -S -v` cannot open a profile payload on the default
+profile. User-facing semantics:
 `docs/users/install-and-update.mdx` → “Custom profile root”.
 
 **Continuation launches** (History, inline Continue, Calendar) select the title

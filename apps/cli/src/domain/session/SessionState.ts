@@ -217,12 +217,10 @@ export interface SessionState {
   /** Pre-formatted watch-time line for the series-complete celebration; null when hidden. */
   readonly watchTimeSummary: string | null;
   readonly playbackProblem: PlaybackProblem | null;
-  /** Structured failover the shell renders. Null when no switch is in progress. */
+  /** Failover notice the shell renders. A mid-stream named hop clears on the next `playing`. */
   readonly playbackFailover: PlaybackFailoverNotice | null;
-  /**
-   * Set by the failure panel when the user asks for Tracks. The playback loop
-   * opens the panel; the shell does not.
-   */
+  readonly failoverAwaitingPlayback: boolean;
+  /** Failure panel asks for Tracks; the playback loop opens it. */
   readonly playbackRecoveryRequest: "tracks" | null;
   readonly resolveRetryCount: number;
   /**
@@ -383,6 +381,7 @@ export function createInitialState(
     watchTimeSummary: null,
     playbackProblem: null,
     playbackFailover: null,
+    failoverAwaitingPlayback: false,
     playbackRecoveryRequest: null,
     resolveRetryCount: 0,
     fallbackTriedProviderIds: [],
@@ -523,6 +522,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         playbackStatus: "idle",
         playbackProblem: null,
         playbackFailover: null,
+        failoverAwaitingPlayback: false,
         playbackRecoveryRequest: null,
       };
 

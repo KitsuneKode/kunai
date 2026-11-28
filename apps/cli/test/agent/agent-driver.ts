@@ -25,8 +25,10 @@
  *  - env mutations are undone in LIFO order on dispose (storage root, KUNAI_*,
  *    PATH) — the session profile is a throwaway root, never the developer's
  *    real profile;
- *  - dispose order is fixed: settle session loop → unmount Ink → clear
- *    root-content globals → close DBs → undo env → delete profile.
+ *  - dispose order is fixed: settle session loop → unmount Ink → release the
+ *    player and its IPC → close DBs → undo env → delete profile;
+ *  - relaunch() is a fresh container on that same profile. It disposes the
+ *    old one completely, then boots again. beforeMount does not re-run.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -103,6 +105,11 @@ export interface AgentSessionOptions {
    * Seed backend state through the real repositories after the container
    * opens and before the shell mounts, so the first frame reads it — the
    * state a returning user boots into.
+   *
+   * Runs on the first boot only. `relaunch()` builds a fresh container on
+   * the same profile and does not call this again: a real process restart
+   * would not re-seed, and re-running it would hide a profile that failed
+   * to survive.
    */
   readonly beforeMount?: (input: {
     readonly container: Container;
@@ -147,12 +154,19 @@ export interface AgentSession {
   diffSince(before: ProfileSnapshot): ProfileDelta;
   note(text: string): void;
   /**
-   * Drive the shell's own quit path (what Ctrl+C / `/quit` trigger through the
-   * shutdown-request bridge), let the session loop finish, then boot a fresh
-   * session loop on the SAME profile — the in-process form of "close it and
-   * open it again". L3's `relaunch` is the real-process version.
+   * Quit through the shell's own path, dispose that container (player, IPC,
+   * databases, timers), and boot a new one on the same profile directory.
+   * `beforeMount` does not run again. A second call while one relaunch is
+   * in flight waits for the first instead of disposing twice. L3's
+   * `relaunch` is the real-process version of the same idea.
    */
   relaunch(): Promise<void>;
+  /**
+   * Times `disposeContainer` was entered for each container this session
+   * retired, oldest first. One relaunch then `dispose()` is `[1, 1]`:
+   * the old container once, then the one left live once.
+   */
+  containerDisposalCounts(): readonly number[];
   /** True after the session loop exited (quit path taken or relaunch pending). */
   quitRequested(): ShutdownIntent | null;
   /** Analytics contract self-check: no installId, analytics not enabled. */
@@ -226,9 +240,11 @@ export function isLoopbackUrl(url: URL): boolean {
  * Replace `globalThis.fetch` with one that rejects non-loopback requests the
  * way an unreachable network does, so the app's own offline and failure paths
  * run. Loopback stays open for the real-mpv media server.
+ *
+ * Always wraps `nativeFetch` — the fetch captured when the session started —
+ * so a relaunch reapplies the guard without nesting one guard inside another.
  */
-function installNetworkGuard(blocked: Set<string>): () => void {
-  const original = globalThis.fetch;
+function installNetworkGuard(blocked: Set<string>, nativeFetch: typeof fetch): void {
   const guarded = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const raw = input instanceof Request ? input.url : String(input);
     let url: URL | null = null;
@@ -249,14 +265,77 @@ function installNetworkGuard(blocked: Set<string>): () => void {
         Object.assign(error, { code: "ECONNREFUSED", errno: 0, path: url.href }),
       );
     }
-    return original(input, init);
+    return nativeFetch(input, init);
   };
   // `fetch.preconnect` is a property of Bun's fetch; copying it across keeps
   // the guarded function a full `typeof fetch`.
-  globalThis.fetch = Object.assign(guarded, { preconnect: original.preconnect });
-  return () => {
-    globalThis.fetch = original;
-  };
+  globalThis.fetch = Object.assign(guarded, { preconnect: nativeFetch.preconnect });
+}
+
+type ContainerBootHooks = {
+  readonly blockedHosts: Set<string>;
+  readonly nativeFetch: typeof fetch;
+  /**
+   * First boot passes true. Relaunch passes false: a real process restart
+   * would not re-seed, and running `beforeMount` again would hide a profile
+   * that failed to survive.
+   */
+  readonly runBeforeMount: boolean;
+};
+
+/**
+ * Build one container the way the first boot does, so relaunch cannot drift
+ * from it. The caller has already applied the session env (compiled-smoke
+ * fixture path, fake-mpv PATH) and seeded config.json; this reloads the
+ * provider and search overrides, reapplies the loopback fetch guard, and
+ * initializes session state. It does not mount Ink.
+ */
+async function bootContainer(
+  options: AgentSessionOptions,
+  profile: IsolatedCliProfile,
+  hooks: ContainerBootHooks,
+): Promise<Container> {
+  if ((options.network ?? "off") === "off") {
+    installNetworkGuard(hooks.blockedHosts, hooks.nativeFetch);
+  }
+
+  let providerModulesOverride;
+  let searchServiceDefinitions;
+  if ((options.providers ?? "smoke") === "smoke") {
+    const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
+      await import("@/container/compiled-smoke-provider-override");
+    [providerModulesOverride, searchServiceDefinitions] = await Promise.all([
+      loadCompiledSmokeProviderOverride(),
+      loadCompiledSmokeSearchDefinitions(),
+    ]);
+  }
+  if (options.providers === "production") {
+    ({ searchServiceDefinitions } = await import(FIXTURE_PROVIDER));
+  }
+
+  const { createContainer } = await import("@/container");
+  const container = await createContainer({ providerModulesOverride, searchServiceDefinitions });
+  try {
+    // Mirror main.ts: the rendered shell and the phase loop must read the same
+    // loaded profiles, rather than the state manager's constructor placeholders.
+    container.stateManager.initialize(
+      container.config.provider,
+      container.config.animeProvider,
+      {
+        anime: container.config.animeLanguageProfile,
+        series: container.config.seriesLanguageProfile,
+        movie: container.config.movieLanguageProfile,
+      },
+      container.config.youtubeProvider,
+    );
+    if (hooks.runBeforeMount) {
+      await options.beforeMount?.({ container, profile });
+    }
+    return container;
+  } catch (error) {
+    await disposeContainer(container);
+    throw error;
+  }
 }
 
 // Polling uses a plain sleep, NOT an act()-wrapped one: updates arrive from
@@ -279,8 +358,13 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
 
   const cleanups: Array<() => void> = [];
   cleanups.push(installActWarningFilter());
+  const nativeFetch = globalThis.fetch;
   const blockedHosts = new Set<string>();
-  if ((options.network ?? "off") === "off") cleanups.push(installNetworkGuard(blockedHosts));
+  if ((options.network ?? "off") === "off") {
+    cleanups.push(() => {
+      globalThis.fetch = nativeFetch;
+    });
+  }
   let unbindShutdown: (() => void) | null = null;
   let handle: RenderHandle | null = null;
   let container: Container | null = null;
@@ -387,8 +471,6 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       ...options.extraEnv,
     };
 
-    let providerModulesOverride;
-    let searchServiceDefinitions;
     if ((options.providers ?? "smoke") === "smoke") {
       env.KUNAI_COMPILED_SMOKE = "1";
       env.KUNAI_COMPILED_SMOKE_FIXTURE = FIXTURE_PROVIDER;
@@ -411,33 +493,11 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     }
     cleanups.push(applyEnv(env));
 
-    const { createContainer } = await import("@/container");
-    if (env.KUNAI_COMPILED_SMOKE === "1") {
-      const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
-        await import("@/container/compiled-smoke-provider-override");
-      [providerModulesOverride, searchServiceDefinitions] = await Promise.all([
-        loadCompiledSmokeProviderOverride(),
-        loadCompiledSmokeSearchDefinitions(),
-      ]);
-    }
-    if (options.providers === "production") {
-      ({ searchServiceDefinitions } = await import(FIXTURE_PROVIDER));
-    }
-    container = await createContainer({ providerModulesOverride, searchServiceDefinitions });
-    // Mirror main.ts: the rendered shell and the phase loop must read the same
-    // loaded profiles, rather than the state manager's constructor placeholders.
-    container.stateManager.initialize(
-      container.config.provider,
-      container.config.animeProvider,
-      {
-        anime: container.config.animeLanguageProfile,
-        series: container.config.seriesLanguageProfile,
-        movie: container.config.movieLanguageProfile,
-      },
-      container.config.youtubeProvider,
-    );
-
-    await options.beforeMount?.({ container, profile });
+    container = await bootContainer(options, profile, {
+      blockedHosts,
+      nativeFetch,
+      runBeforeMount: true,
+    });
     const { AppRoot } = await import("@/app-shell/ink-shell");
     handle = render(createElement(AppRoot, { container }), { columns, rows });
   } catch (error) {
@@ -454,13 +514,13 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     throw error;
   }
 
-  // Boot succeeded — these are non-null for the life of the session. `handle`
-  // stays mutable because relaunch() re-mounts; everything else is const.
+  // Boot succeeded. `handle` and `sessionContainer` are replaced on relaunch:
+  // the next session is a new container, not the one beginShutdown() already ran.
   if (!handle || !container || !profile) {
     throw new Error("unreachable: boot finished without handle/container/profile");
   }
   const sessionProfile = profile;
-  const sessionContainer = container;
+  let sessionContainer: Container | null = container;
   const requireHandle = (): RenderHandle => {
     if (!handle) throw new Error("session is not mounted (disposed?)");
     return handle;
@@ -561,6 +621,73 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     );
   };
 
+  // Relaunch and dispose share one queue so a second relaunch waits for the
+  // first, and dispose never retires a container the in-flight relaunch is
+  // still retiring. `relaunchInFlight` collapses overlapping relaunch calls
+  // onto that one piece of work instead of queueing a second dispose.
+  let lifecycle: Promise<void> = Promise.resolve();
+  let relaunchInFlight: Promise<void> | null = null;
+  const disposalCountByContainer = new Map<Container, number>();
+
+  const enqueue = (work: () => Promise<void>): Promise<void> => {
+    const run = lifecycle.then(work, work);
+    lifecycle = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+
+  const retireContainer = async (target: Container | null): Promise<void> => {
+    if (!target) return;
+    disposalCountByContainer.set(target, (disposalCountByContainer.get(target) ?? 0) + 1);
+    await disposeContainer(target);
+  };
+
+  const performRelaunch = async (): Promise<void> => {
+    // stopLoop sends the real Ctrl+C — only after it returns is quitIntent
+    // populated, so the journal records the actual reason, not a guess.
+    await stopLoop();
+    pushJournal("quit", `quit (${quitIntent?.reason ?? "driver"})`, frame());
+    const generation = ++controllerGeneration;
+    try {
+      handle?.unmount();
+    } catch {
+      // The next mount must not see a live Ink root.
+    }
+    handle = null;
+    forceSettleAllRootContent("agent-session-relaunch");
+    quitIntent = null;
+    loopError = null;
+    const retiringController = controller;
+    const retiringContainer = sessionContainer;
+    sessionContainer = null;
+    // Same order as a process exit: the player stops, its IPC socket closes,
+    // then the container releases databases and timers.
+    retiringController.beginShutdown();
+    await retiringController.releaseExternalResources();
+    await retireContainer(retiringContainer);
+    if (generation !== controllerGeneration || disposed) return;
+    const next = await bootContainer(options, sessionProfile, {
+      blockedHosts,
+      nativeFetch,
+      runBeforeMount: false,
+    });
+    if (generation !== controllerGeneration || disposed) {
+      next.player.beginShutdown();
+      await next.player.releasePersistentSession();
+      await retireContainer(next);
+      return;
+    }
+    sessionContainer = next;
+    controller = new SessionController(next);
+    const { AppRoot } = await import("@/app-shell/ink-shell");
+    handle = render(createElement(AppRoot, { container: next }), { columns, rows });
+    if (generation !== controllerGeneration || disposed) return;
+    startLoop();
+    pushJournal("relaunch", "relaunch", frame());
+  };
+
   const session: AgentSession = {
     profile: sessionProfile,
     journal,
@@ -632,21 +759,20 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       pushJournal("note", text, frame());
     },
     quitRequested: () => quitIntent,
-    async relaunch() {
-      // stopLoop sends the real Ctrl+C — only after it returns is quitIntent
-      // populated, so the journal records the actual reason, not a guess.
-      await stopLoop();
-      pushJournal("quit", `quit (${quitIntent?.reason ?? "driver"})`, frame());
-      const generation = ++controllerGeneration;
-      requireHandle().unmount();
-      forceSettleAllRootContent("agent-session-relaunch");
-      quitIntent = null;
-      controller = new SessionController(sessionContainer);
-      const { AppRoot } = await import("@/app-shell/ink-shell");
-      handle = render(createElement(AppRoot, { container: sessionContainer }), { columns, rows });
-      if (generation !== controllerGeneration) return; // disposed mid-relaunch
-      startLoop();
-      pushJournal("relaunch", "relaunch", frame());
+    relaunch() {
+      if (disposed) return Promise.resolve();
+      if (relaunchInFlight) return relaunchInFlight;
+      const run = enqueue(async () => {
+        if (disposed) return;
+        await performRelaunch();
+      });
+      relaunchInFlight = run;
+      return run.finally(() => {
+        if (relaunchInFlight === run) relaunchInFlight = null;
+      });
+    },
+    containerDisposalCounts() {
+      return [...disposalCountByContainer.values()];
     },
     assertPrivacyClean() {
       const config = session.inspect().config();
@@ -665,29 +791,39 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       return [...blockedHosts];
     },
     sessionState() {
-      if (!container) throw new Error("sessionState: the session has no container");
-      return container.stateManager.getState();
+      if (!sessionContainer) throw new Error("sessionState: the session has no container");
+      return sessionContainer.stateManager.getState();
     },
     async dispose() {
       if (disposed) return;
       disposed = true;
-      try {
-        await stopLoop();
-      } finally {
+      await enqueue(async () => {
+        controllerGeneration += 1;
         try {
-          handle?.unmount();
+          await stopLoop();
         } finally {
-          // Module-level shell globals must be cleared before the next session —
-          // synchronously, or a following createAgentSession can inherit the
-          // previous session's content mount or leak a blocked mount promise.
-          forceSettleAllRootContent("agent-session-dispose");
-          await disposeContainer(sessionContainer);
-          unbindShutdown?.();
-          runCleanups();
-          disposeIsolatedCliProfile(sessionProfile);
-          activeSession = null;
+          try {
+            handle?.unmount();
+          } catch {
+            // Ink may already be unmounted by an in-flight relaunch.
+          } finally {
+            handle = null;
+            // Module-level shell globals must be cleared before the next session —
+            // synchronously, or a following createAgentSession can inherit the
+            // previous session's content mount or leak a blocked mount promise.
+            forceSettleAllRootContent("agent-session-dispose");
+            const retiring = sessionContainer;
+            sessionContainer = null;
+            controller.beginShutdown();
+            await controller.releaseExternalResources();
+            await retireContainer(retiring);
+            unbindShutdown?.();
+            runCleanups();
+            disposeIsolatedCliProfile(sessionProfile);
+            activeSession = null;
+          }
         }
-      }
+      });
     },
   };
   return session;
