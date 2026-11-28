@@ -1,10 +1,8 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
-import {
-  createCacheGenerationGate,
-  type CacheGenerationToken,
-} from "@/infra/concurrency/cache-generation";
+import { createCacheGenerationGate } from "@/infra/concurrency/cache-generation";
+import type { CacheGenerationToken } from "@/infra/concurrency/cache-generation";
 import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
@@ -403,9 +401,7 @@ export class CatalogDiscoveryService {
       if (results.length === 0) continue;
       const section: CatalogTrendingSection = { results, sourceId: source.id };
       // A fallback answer is reused only briefly so the primary is retried
-      // soon; one primary timeout must not pin a stand-in for the full
-      // trending TTL. The durable row is the same commit generation as memory:
-      // a refresh while the source was in flight must not leak either write.
+      // soon; memory and the durable row share one freshness commit.
       const committed = this.commitSection(
         key,
         generation,
