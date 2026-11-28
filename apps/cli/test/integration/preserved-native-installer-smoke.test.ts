@@ -129,17 +129,31 @@ describeCandidate("preserved native installer smoke", () => {
             archiveSourceUrl: `${baseUrl}/download/v${version}/${archiveName}`,
           });
 
+          // The sandbox is a KUNAI_CONFIG_DIR profile, whose Windows launcher is
+          // the kunai.cmd wrapper (#860); a .cmd runs through a shell.
           const launcher = join(
             sandbox.binDir,
-            process.platform === "win32" ? "kunai.exe" : "kunai",
+            process.platform === "win32" ? "kunai.cmd" : "kunai",
           );
-          const versionResult = await runCommand([launcher, "--version"], env);
+          const runLauncher = (arg: string) =>
+            process.platform === "win32"
+              ? runCommand(
+                  [
+                    "pwsh",
+                    "-NoProfile",
+                    "-Command",
+                    `& $env:KUNAI_SMOKE_LAUNCHER ${arg}; exit $LASTEXITCODE`,
+                  ],
+                  { ...env, KUNAI_SMOKE_LAUNCHER: launcher },
+                )
+              : runCommand([launcher, arg], env);
+          const versionResult = await runLauncher("--version");
           expect(versionResult.status, versionResult.stderr).toBe(0);
           const reportedVersion = /^kunai\s+v?(\d+\.\d+\.\d+)(?:\s|$)/.exec(
             versionResult.stdout.trim(),
           )?.[1];
           expect(reportedVersion).toBe(version);
-          const helpResult = await runCommand([launcher, "--help"], env);
+          const helpResult = await runLauncher("--help");
           expect(helpResult.status, helpResult.stderr).toBe(0);
           expect(helpResult.stdout.trim().length).toBeGreaterThan(0);
         },
