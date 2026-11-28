@@ -24,6 +24,16 @@ const SOCKET_TAIL = "/kunai-ipc/kunai-mpv-0123456789abcdef.sock";
 const SCRATCH_ATTEMPTS = 8;
 export const MAX_LISTED_LEFTOVERS = 20;
 
+/**
+ * Bun writes this under `os.tmpdir()` while it loads test modules. It is the
+ * runtime's compile cache, not a fixture a test created.
+ */
+const RUNTIME_SCRATCH_ENTRIES: ReadonlySet<string> = new Set(["node-compile-cache"]);
+
+export function testScratchLeftovers(names: readonly string[]): readonly string[] {
+  return names.filter((name) => !RUNTIME_SCRATCH_ENTRIES.has(name));
+}
+
 export type TempEnvSnapshot = {
   readonly TMPDIR: string | undefined;
   readonly TMP: string | undefined;
@@ -190,7 +200,7 @@ export function disposeTestScratch(
   io: ScratchDirectoryIo,
   report: ScratchLeakReport,
 ): void {
-  const names = io.list(directory);
+  const names = testScratchLeftovers(io.list(directory));
   restoreTempEnv(env, previous);
   io.remove(directory);
   if (names.length === 0) return;

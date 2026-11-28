@@ -88,7 +88,8 @@ processes in parallel against one machine temp directory, so the check is the
 contents of this process's scratch, not a diff of the shared temp directory.
 Each test still removes the directories it creates (`finally` / `afterEach`);
 the scratch is the backstop, including when `fs.promises.rm` resolves while
-the directory is still there.
+the directory is still there. Bun's own `node-compile-cache` directory is the
+runtime, not a fixture, and is not reported.
 Standalone harnesses (launchers, shells, non-`bun test` entrypoints) get the same
 environment from `storageRootEnv()` in `test/helpers/storage-env.ts`, re-exported
 through `apps/cli/test/helpers/storage-env.ts`; `applyStorageRootEnv()` applies

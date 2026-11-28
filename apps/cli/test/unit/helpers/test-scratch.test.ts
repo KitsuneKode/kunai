@@ -92,6 +92,34 @@ describe("test scratch guard", () => {
     expect(env.TEMP).toBeUndefined();
   });
 
+  test("bun's compile cache in the scratch is not reported as a test leak", () => {
+    const env: NodeJS.ProcessEnv = { TMPDIR: "/orig" };
+    const previous = snapshotTempEnv(env);
+    const recorded = recordingIo(["node-compile-cache", "kunai-left"], env);
+    const warnings: string[] = [];
+    expect(() =>
+      disposeTestScratch("/scratch/kt-4-ab12", previous, env, recorded.io, {
+        ci: true,
+        warn: (line) => {
+          warnings.push(line);
+        },
+      }),
+    ).toThrow(/kunai-left/);
+    expect(warnings).toEqual([]);
+
+    const onlyCache = recordingIo(["node-compile-cache"], { TMPDIR: "/scratch/kt-4-ab12" });
+    const cacheEnv: NodeJS.ProcessEnv = { TMPDIR: "/scratch/kt-4-ab12" };
+    const cachePrevious = snapshotTempEnv({ TMPDIR: "/orig" });
+    disposeTestScratch("/scratch/kt-4-ab12", cachePrevious, cacheEnv, onlyCache.io, {
+      ci: true,
+      warn: (line) => {
+        warnings.push(line);
+      },
+    });
+    expect(warnings).toEqual([]);
+    expect(onlyCache.removed).toEqual(["/scratch/kt-4-ab12"]);
+  });
+
   test("an empty scratch is removed with no warning and no throw", () => {
     const env: NodeJS.ProcessEnv = { TMPDIR: "/orig", TMP: "/orig", TEMP: "/orig" };
     const previous = snapshotTempEnv(env);
