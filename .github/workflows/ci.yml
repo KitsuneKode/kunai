@@ -1013,12 +1013,15 @@ jobs:
           test/unit/scripts/release-gate-evidence.test.ts
           test/unit/scripts/publish-npm-release.test.ts
 
+      - name: Use an unpublished fixture release version
+        run: >-
+          node -e 'const fs=require("fs"); const p="apps/cli/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.version="0.0.0-release-ci"; fs.writeFileSync(p,JSON.stringify(pkg,null,2)+"\n")'
+
       - name: Build launcher package metadata
         run: bun run --cwd apps/cli build
 
       - name: Prepare a lightweight local publication candidate
         run: |
-          node -e 'const fs=require("fs"); const p="apps/cli/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.version="0.0.0-release-ci"; fs.writeFileSync(p,JSON.stringify(pkg,null,2)+"\n")'
           mkdir -p apps/cli/dist/bin
           for bin in kunai-linux-x64 kunai-linux-x64-musl kunai-linux-arm64 kunai-linux-arm64-musl kunai-android-arm64 kunai-android-x64 kunai-darwin-x64 kunai-darwin-arm64 kunai-windows-x64.exe kunai-windows-arm64.exe; do
             printf '#!/bin/sh\nexit 0\n' > "apps/cli/dist/bin/$bin"

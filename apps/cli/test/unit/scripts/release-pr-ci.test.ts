@@ -27,6 +27,9 @@ test("release-only script changes run a fast PR smoke job", () => {
   expect(workflow.indexOf("bun run release:pack")).toBeLessThan(
     workflow.indexOf("bun run release:prepare"),
   );
+  expect(workflow.indexOf('pkg.version="0.0.0-release-ci"')).toBeLessThan(
+    workflow.indexOf("name: Build launcher package metadata"),
+  );
   expect(workflow).toContain("bun run scripts/publish-npm-release.ts --dry-run");
   expect(workflow).toContain("release-scripts,");
 });
