@@ -84,98 +84,20 @@ function inferredConfigKeys(row: ConfigurableRegistryRow): readonly string[] {
   return row.id in DEFAULT_CONFIG ? [row.id] : [];
 }
 
+const transpilers = {
+  ts: new Bun.Transpiler({ loader: "ts", trimUnusedImports: false, deadCodeElimination: false }),
+  tsx: new Bun.Transpiler({ loader: "tsx", trimUnusedImports: false, deadCodeElimination: false }),
+};
+
 /**
- * Remove TypeScript comments with a small lexical scanner. Strings and
- * template literals are tokenized so `//` inside a URL or template never
- * starts a comment; interpolation is scanned as normal TypeScript so comments
- * there cannot smuggle reader evidence into the audit either.
+ * Remove comments (and type-only syntax, which never reads a setting) by
+ * letting Bun's TypeScript parser re-print the source. A real parser knows a
+ * regular-expression literal from division and a string from a comment, which
+ * a hand-written scanner kept getting wrong. Dead-code elimination is off so an
+ * unused module-level read still counts as evidence.
  */
-function stripTypeScriptComments(text: string): string {
-  let output = "";
-
-  function scanQuoted(index: number, quote: "'" | '"'): number {
-    let cursor = index + 1;
-    while (cursor < text.length) {
-      const char = text[cursor];
-      if (char === "\\") cursor += 2;
-      else if (char === quote) return cursor + 1;
-      else cursor += 1;
-    }
-    return cursor;
-  }
-
-  function scanTemplate(index: number): number {
-    output += "`";
-    let cursor = index + 1;
-    while (cursor < text.length) {
-      const char = text[cursor];
-      if (char === "\\") {
-        output += text.slice(cursor, cursor + 2);
-        cursor += 2;
-      } else if (char === "`") {
-        output += "`";
-        return cursor + 1;
-      } else if (char === "$" && text[cursor + 1] === "{") {
-        output += "${";
-        cursor = scanNormal(cursor + 2, true);
-        if (text[cursor] === "}") {
-          output += "}";
-          cursor += 1;
-        }
-      } else {
-        output += char;
-        cursor += 1;
-      }
-    }
-    return cursor;
-  }
-
-  function scanNormal(start: number, stopAtCloseBrace: boolean): number {
-    let cursor = start;
-    let nestedBraces = 0;
-    while (cursor < text.length) {
-      const char = text[cursor];
-      if (char === "}") {
-        if (stopAtCloseBrace && nestedBraces === 0) return cursor;
-        if (nestedBraces > 0) nestedBraces -= 1;
-      } else if (char === "{") {
-        nestedBraces += 1;
-      }
-      if (char === "/" && text[cursor + 1] === "/") {
-        cursor += 2;
-        while (cursor < text.length && text[cursor] !== "\n") cursor += 1;
-        continue;
-      }
-      if (char === "/" && text[cursor + 1] === "*") {
-        cursor += 2;
-        while (cursor < text.length) {
-          if (text[cursor] === "*" && text[cursor + 1] === "/") {
-            cursor += 2;
-            break;
-          }
-          if (text[cursor] === "\n") output += "\n";
-          cursor += 1;
-        }
-        continue;
-      }
-      if (char === "'" || char === '"') {
-        const end = scanQuoted(cursor, char);
-        output += text.slice(cursor, end);
-        cursor = end;
-        continue;
-      }
-      if (char === "`") {
-        cursor = scanTemplate(cursor);
-        continue;
-      }
-      output += char;
-      cursor += 1;
-    }
-    return cursor;
-  }
-
-  scanNormal(0, false);
-  return output;
+function stripTypeScriptComments(text: string, loader: "ts" | "tsx" = "ts"): string {
+  return transpilers[loader].transformSync(text);
 }
 
 /**
@@ -217,7 +139,10 @@ function productionSources(): readonly { file: string; text: string }[] {
         file !== "apps/cli/src/app/bootstrap/apply-settings-to-runtime.ts"
       );
     })
-    .map((file) => ({ file, text: stripTypeScriptComments(readRepoFile(file)) }));
+    .map((file) => ({
+      file,
+      text: stripTypeScriptComments(readRepoFile(file), file.endsWith(".tsx") ? "tsx" : "ts"),
+    }));
 }
 
 describe("stripTypeScriptComments", () => {
@@ -240,12 +165,30 @@ describe("stripTypeScriptComments", () => {
     expect(stripped).not.toContain("analyticsCohort");
   });
 
-  test("tracks nested object braces while scanning template interpolation", () => {
+  test("a regular-expression literal containing a quote does not keep a later comment", () => {
+    const stripped = stripTypeScriptComments(
+      "const punctuation = /'/; // providerDns\nconst label = 'ready';",
+    );
+
+    expect(stripped).toContain("const label");
+    expect(stripped).not.toContain("providerDns");
+  });
+
+  test("division is not mistaken for a regular expression", () => {
+    const stripped = stripTypeScriptComments(
+      "const half = total / 2; // providerDns\nconst next = 1;",
+    );
+
+    expect(stripped).toContain("const next");
+    expect(stripped).not.toContain("providerDns");
+  });
+
+  test("keeps nested object code inside template interpolation", () => {
     const stripped = stripTypeScriptComments(
       "const label = `${({ enabled /* providerDns */ }).enabled ? 'on' : 'off'}`;",
     );
 
-    expect(stripped).toContain("({ enabled");
+    expect(stripped).toContain("enabled }.enabled");
     expect(stripped).not.toContain("providerDns");
   });
 });

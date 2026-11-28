@@ -48,7 +48,9 @@ export function addonSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "submenu",
       id: "experimentalStremioAddons",
-      effectTiming: "next-launch",
+      // The tag describes what the next change would do: turning addons off is
+      // read at the next resolve, turning them on needs a restart to load them.
+      effectTiming: globallyOff ? "next-launch" : "next-playback",
       label: "Experimental: Stremio addons",
       detail:
         "Third-party addon servers you choose. Off by default; turning it off stops addons at the next resolve.",

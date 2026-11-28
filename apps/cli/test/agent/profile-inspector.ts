@@ -43,13 +43,16 @@ export type QueueRow = {
 function canonicalJson(value: LooseJsonValue): LooseJsonValue {
   if (Array.isArray(value)) return value.map(canonicalJson);
   if (!isJsonObject(value)) return value;
-  const sorted: Record<string, LooseJsonValue> = {};
-  for (const key of Object.keys(value).sort()) {
-    const entry = value[key];
-    if (entry === undefined) continue;
-    sorted[key] = canonicalJson(entry);
-  }
-  return sorted;
+  // Object.fromEntries defines own properties, so a "__proto__" key from the
+  // config file stays data instead of hitting the inherited prototype setter.
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .flatMap((key) => {
+        const entry = value[key];
+        return entry === undefined ? [] : [[key, canonicalJson(entry)] as const];
+      }),
+  );
 }
 
 /** Canonical JSON for one row — recursively sorted keys so equal rows serialize equal. */

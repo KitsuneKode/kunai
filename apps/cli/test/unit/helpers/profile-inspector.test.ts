@@ -59,6 +59,19 @@ describe("profile inspector config snapshots", () => {
     expect(delta?.added[0]).toContain('"enabled":true');
   });
 
+  test("a __proto__ key is kept as an ordinary property, so its changes are seen", () => {
+    const root = profileRoot();
+    const paths = pathsFor(root);
+    writeFileSync(paths.configPath, '{"__proto__":{"enabled":false},"theme":"dark"}');
+    const before = snapshotProfile(paths);
+    writeFileSync(paths.configPath, '{"__proto__":{"enabled":true},"theme":"dark"}');
+    const after = snapshotProfile(paths);
+
+    const delta = diffSnapshots(before, after).get("config.json");
+    expect(delta?.added.length).toBe(1);
+    expect(delta?.added[0]).toContain('"__proto__":{"enabled":true}');
+  });
+
   test("a config path that exists but cannot be read becomes the unreadable marker", () => {
     const root = profileRoot();
     const paths = pathsFor(root);
