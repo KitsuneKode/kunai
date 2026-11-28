@@ -194,7 +194,8 @@ export function encodeCommand(command: KittyCommand, passthrough?: "tmux"): stri
   let out = "";
   for (let at = 0; at < body.length; at += CHUNK_SIZE) {
     const more = at + CHUNK_SIZE < body.length ? 1 : 0;
-    const keys = at === 0 ? `${command.keys},o=z,t=d,m=${more}` : `m=${more}`;
+    const continuation = command.keys.startsWith("a=f,") ? `a=f,m=${more}` : `m=${more}`;
+    const keys = at === 0 ? `${command.keys},o=z,t=d,m=${more}` : continuation;
     out += wrap(`\x1b_G${keys};${body.slice(at, at + CHUNK_SIZE)}\x1b\\`);
   }
   return out;

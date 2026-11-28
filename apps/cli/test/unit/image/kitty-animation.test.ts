@@ -102,6 +102,29 @@ describe("the commands, byte for byte", () => {
     expect([...payloadOf(chunks.join(`${ESC}\\`))]).toEqual([...noisy.rgba]);
   });
 
+  test("animation frame continuations keep a=f, as the protocol requires", () => {
+    // Noise does not compress, so this frame needs continuation chunks. Kitty
+    // 0.51.1: subsequent chunks must carry only m (and optionally q), except
+    // animation frame data, which must also specify a=f.
+    const noisy = frame(64, 0);
+    let seed = 0x2545f491;
+    for (let at = 0; at < noisy.rgba.length; at++) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      noisy.rgba[at] = seed & 0xff;
+    }
+    const chunks = encodeCommand({
+      keys: "a=f,f=32,s=64,v=64,x=0,y=0,c=1,X=1,z=100,i=7,q=2",
+      pixels: noisy.rgba,
+    })
+      .split(`${ESC}\\`)
+      .filter(Boolean);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks[1]?.startsWith(`${ESC}_Ga=f,m=`)).toBe(true);
+    expect(chunks.at(-1)?.startsWith(`${ESC}_Ga=f,m=0;`)).toBe(true);
+  });
+
   test("under tmux every chunk is wrapped for passthrough", () => {
     expect(encodeCommand(deleteImageCommand(7), "tmux")).toBe(
       `${ESC}Ptmux;${ESC}${ESC}_Ga=d,d=I,i=7,q=2;${ESC}${ESC}\\${ESC}\\`,
