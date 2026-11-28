@@ -185,7 +185,7 @@ const nodeProfileOwnershipFs: ProfileOwnershipFs = {
 };
 
 /** Validate the root shape shared by explicit desktop profiles and inferred Windows ones. */
-function assertProfileRootShape(
+function assertDedicatedProfileRoot(
   root: string,
   displayRoot: string,
   platform: StoragePlatform,
@@ -257,7 +257,7 @@ function checkProfileOwnership(
   // normalized path their shell resolved it to.
   const displayRoot = env.KUNAI_CONFIG_DIR ?? root;
   try {
-    const rootStat = assertProfileRootShape(
+    const rootStat = assertDedicatedProfileRoot(
       root,
       env.KUNAI_CONFIG_DIR ?? displayRoot,
       platform,
@@ -379,7 +379,7 @@ function requireValidWindowsProfileRoot(
   const resolved = resolveDesktopProfileDirs("win32", root);
   if (!resolved) throw new DesktopProfileError(root, "is not a dedicated profile root");
   const profileDir = resolved.profileDir;
-  const rootStat = assertProfileRootShape(profileDir, root, "win32", env, {
+  const rootStat = assertDedicatedProfileRoot(profileDir, root, "win32", env, {
     lstat: (path) => fs.lstat(path),
     physicalPath: (path) => physicalWindowsPath(fs, path),
   });
@@ -448,8 +448,23 @@ function classifyOwnedWindowsProfile(
   return { kind: "profile", profileDir: physicalRoot };
 }
 
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+type WindowsInstallManifestEvidence = {
+  readonly method?: unknown;
+  readonly channel?: unknown;
+  readonly versionedPath?: unknown;
+  readonly versionPath?: unknown;
+};
+
+function isObjectLike<T>(value: T): value is T & object {
+  return value !== null && !Array.isArray(value) && value instanceof Object;
+}
+
+function isStringValue<T>(value: T): value is T & string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function isNonEmptyString<T>(value: T): value is T & string {
+  return isStringValue(value) && value.length > 0;
 }
 
 function classifyDefaultWindowsInstall(
@@ -486,13 +501,18 @@ function classifyDefaultWindowsInstall(
   } catch {
     return ambiguous("is not valid JSON");
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  if (!isObjectLike(parsed)) {
     return ambiguous("is not a JSON object");
   }
-  const record = parsed as Record<string, unknown>;
-  const method = record.method ?? record.channel;
+  // SAFETY: parsed is a JSON object; every evidence field is decoded before use.
+  const record = parsed as WindowsInstallManifestEvidence;
+  const method = isStringValue(record.method) ? record.method : record.channel;
   if (method !== "binary") return ambiguous("does not describe a binary install");
-  const versionedPath = nonEmptyString(record.versionedPath) ?? nonEmptyString(record.versionPath);
+  const versionedPath = isNonEmptyString(record.versionedPath)
+    ? record.versionedPath
+    : isNonEmptyString(record.versionPath)
+      ? record.versionPath
+      : undefined;
   if (!versionedPath) return ambiguous("has no versionedPath or schema-1 versionPath");
 
   const physicalExecutable = normalizeWindowsPath(fs.realpathNative(layout.executablePath));

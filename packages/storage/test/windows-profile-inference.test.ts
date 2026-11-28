@@ -120,9 +120,7 @@ const APPDATA = win32Path.join(HOME, "AppData", "Roaming");
 const LOCALAPPDATA = win32Path.join(HOME, "AppData", "Local");
 const MANIFEST_PATH = win32Path.join(APPDATA, "kunai", "install.json");
 
-function makeEnv(
-  overrides: Readonly<Record<string, string | undefined>> = {},
-): Readonly<Record<string, string | undefined>> {
+function makeEnv(overrides: Readonly<Record<string, string | undefined>> = {}) {
   return {
     USERPROFILE: HOME,
     APPDATA,
@@ -137,11 +135,26 @@ function addVersionedExecutable(fs: VirtualWindowsFs, root: string, version = "1
   return executable;
 }
 
-function addManifest(fs: VirtualWindowsFs, manifest: object | string): string {
-  fs.addFile(
-    MANIFEST_PATH,
-    typeof manifest === "string" ? manifest : `${JSON.stringify(manifest, null, 2)}\n`,
-  );
+type TestManifest = {
+  readonly schemaVersion?: number;
+  readonly method?: string;
+  readonly channel?: string;
+  readonly activeVersion?: string;
+  readonly launcherPath?: string;
+  readonly versionedPath?: string;
+  readonly version?: string;
+  readonly binPath?: string;
+  readonly versionPath?: string;
+  readonly dlBase?: string;
+  readonly installedAt?: string;
+};
+
+function addManifest(fs: VirtualWindowsFs, manifest: TestManifest): string {
+  return addManifestText(fs, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+function addManifestText(fs: VirtualWindowsFs, manifest: string): string {
+  fs.addFile(MANIFEST_PATH, manifest);
   return MANIFEST_PATH;
 }
 
@@ -402,7 +415,7 @@ describe("classifyWindowsExecutableProfile", () => {
   test("an oversized install.json is ambiguous", () => {
     const fs = new VirtualWindowsFs();
     const executable = addVersionedExecutable(fs, "C:\\tools\\kunai");
-    addManifest(fs, `{"method":"binary","padding":"${"x".repeat(64 * 1024)}"}`);
+    addManifestText(fs, `{"method":"binary","padding":"${"x".repeat(64 * 1024)}"}`);
 
     expectAmbiguous(classify(executable, fs), ["install.json", "64 KiB"]);
   });
@@ -410,7 +423,7 @@ describe("classifyWindowsExecutableProfile", () => {
   test("invalid JSON in install.json is ambiguous", () => {
     const fs = new VirtualWindowsFs();
     const executable = addVersionedExecutable(fs, "C:\\tools\\kunai");
-    addManifest(fs, "{not json");
+    addManifestText(fs, "{not json");
 
     expectAmbiguous(classify(executable, fs), ["install.json", "valid JSON"]);
   });
