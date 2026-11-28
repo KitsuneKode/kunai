@@ -156,9 +156,14 @@ describe("command picker model", () => {
 
     const model = buildCommandPickerModel("/con", [settingsCommand, continueCommand], 0);
 
-    expect(model.options[0]?.value).toBe("continue");
+    // Both aliases are command-prefix matches ("config" and "continue"), so
+    // tier stability preserves caller order instead of re-scoring inside the tier.
+    expect(model.options.map((option) => option.value)).toEqual(["settings", "continue"]);
     expect(getCommandAutocompleteTarget("/con", [settingsCommand, continueCommand], 0)?.id).toBe(
-      "continue",
+      "settings",
     );
+    expect(
+      buildCommandPickerModel("/con", [continueCommand, settingsCommand], 0).options[0]?.value,
+    ).toBe("continue");
   });
 });

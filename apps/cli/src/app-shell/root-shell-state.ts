@@ -81,8 +81,10 @@ export function resolveRootShellSurface(
   const rootOverlay = getRootOwnedOverlay(state);
   if (state.playbackStatus === "error") {
     // Recovery must stay reachable while the phase waits for a retry. Closing
-    // the picker without a choice returns to the original failure.
-    return rootOverlay?.type === "provider_picker" ? "root-overlay" : "error";
+    // the picker or Tracks without a choice returns to the original failure.
+    return rootOverlay?.type === "provider_picker" || rootOverlay?.type === "tracks_panel"
+      ? "root-overlay"
+      : "error";
   }
   if (isPlaybackSessionActive(state.playbackStatus)) {
     if (rootOverlay) {

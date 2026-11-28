@@ -54,6 +54,8 @@ export interface LocalTitleEntry {
 
 export interface LocalTitleMatch {
   readonly entry: LocalTitleEntry;
+  /** 0 title-start prefix, 1 word-start prefix, 2 subsequence. */
+  readonly tier: 0 | 1 | 2;
   /** Char ranges [start, end) on `entry.title` to render in palette.accent. */
   readonly ranges: readonly [number, number][];
 }
@@ -227,6 +229,7 @@ export function matchLocalTitles(
 
   return scored.slice(0, Math.max(0, limit)).map((match) => ({
     entry: match.entry,
+    tier: match.tier,
     ranges: match.ranges,
   }));
 }

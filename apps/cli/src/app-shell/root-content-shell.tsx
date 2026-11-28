@@ -81,6 +81,12 @@ export function renderErrorRootContent(
   const fixFor = (id: string) => rows.find((row) => row.id === id)?.fix ?? null;
   const canRetry = true;
   const canPickProvider = Boolean(state.currentTitle);
+  const dependencyCause = state.playbackProblem?.cause;
+  const recoveryAffordance =
+    dependencyCause !== "mpv-missing" &&
+    dependencyCause !== "vlc-missing" &&
+    dependencyCause !== "android-intent-launcher-missing" &&
+    dependencyCause !== "yt-dlp-missing";
 
   return (
     <ErrorShell
@@ -107,6 +113,17 @@ export function renderErrorRootContent(
       waterfall={playbackFailureWaterfall}
       debugEnabled={Boolean(container.debugTracePath)}
       debugError={peekPlaybackShellError()}
+      recoveryAffordance={recoveryAffordance}
+      onOpenTracks={
+        recoveryAffordance && state.stream
+          ? () => {
+              stateManager.dispatch({
+                type: "SET_PLAYBACK_RECOVERY_REQUEST",
+                request: "tracks",
+              });
+            }
+          : undefined
+      }
       onResolve={() => {
         clearPlaybackShellError();
         stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });

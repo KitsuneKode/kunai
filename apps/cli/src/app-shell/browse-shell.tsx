@@ -7,6 +7,7 @@ import { useDwellPrefetch } from "@/app-shell/hooks/use-dwell-prefetch";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { kannaDoneText, type KannaDoneKind } from "@/app-shell/kanna-voice";
 import { useLineEditor } from "@/app-shell/line-editor";
+import { defaultPaletteSelectionIndex } from "@/app-shell/palette-ranking";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
@@ -20,7 +21,6 @@ import {
 } from "@/domain/search/suggestion-engine";
 import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   addSearchQuery,
   getSearchHistory,
@@ -103,10 +103,8 @@ import {
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
   windowCalendarRowsByLines,
-  type CalendarTypeTab,
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
-import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { momentForBrowseEmpty } from "./companion-moment";
 import { CompanionHost } from "./CompanionHost";
 import { DetailsSheetUI } from "./details-pane-ui";
@@ -117,18 +115,12 @@ import {
   resolveBrowseDetailsSecondary,
   type DetailsPanelData,
 } from "./details-panel";
-import {
-  buildDetailsFetchErrorSheet,
-  buildDetailsSheet,
-  type DetailsSheetAvailability,
-  type DetailsSheetHistory,
-} from "./details-sheet.model";
+import { buildDetailsFetchErrorSheet, buildDetailsSheet } from "./details-sheet.model";
 import { useCalendarCursor, type CalendarKeyboardCursor } from "./hooks/use-calendar-cursor";
 import {
   useCalendarRoute,
   useCalendarSessionStatus,
   type CalendarRouteRequest,
-  type CalendarSessionStatus,
 } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { resolveSuggestionDebounceMs, useSearchSuggestions } from "./hooks/use-search-suggestions";
@@ -182,7 +174,6 @@ import { palette } from "./shell-theme";
 import { getSuggestionBandRowCount, SearchSuggestionBand } from "./suggestion-band-ui";
 import {
   toShellAction,
-  type BrowseIdleContextLoader,
   type BrowseShellOption,
   type BrowseShellSearchResponse,
   type ShellAction,
@@ -202,14 +193,12 @@ function browseFilterPlaceholder(mode: ShellMode): string {
   return "type title, year, movie, series, downloaded…";
 }
 
-export type BrowseQueryDraft = { value: string; mode: ShellMode };
+import type { BrowseShellProps, DetailsSheetLocalContext } from "./browse-shell-props";
+
+export type { BrowseQueryDraft, DetailsSheetLocalContext } from "./browse-shell-props";
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
 
-export type DetailsSheetLocalContext = {
-  readonly history: DetailsSheetHistory | null;
-  readonly availability: DetailsSheetAvailability | null;
-};
 const NO_LOCAL_DETAILS: DetailsSheetLocalContext = { history: null, availability: null };
 
 export function BrowseShell<T>({
@@ -256,81 +245,7 @@ export function BrowseShell<T>({
   detailsContextFor,
   suggestionDebounceMs,
   localTitles,
-}: {
-  mode: ShellMode;
-  provider: string;
-  initialQuery?: string;
-  queryDraft?: BrowseQueryDraft;
-  initialResults?: readonly BrowseShellOption<T>[];
-  initialResultSubtitle?: string;
-  initialErrorMessage?: string;
-  /** The cause-named empty copy from a bootstrap search that found nothing. */
-  initialEmptyMessage?: string;
-  initialWarnings?: readonly string[];
-  initialSelectedIndex?: number;
-  initialCalendarTypeTab?: CalendarTypeTab;
-  /**
-   * Present when this open IS the calendar route. Route identity comes from
-   * here, never from whether the loaded options happen to contain calendar rows.
-   */
-  initialCalendarRoute?: CalendarRouteRequest;
-  startupPicks?: boolean;
-  placeholder: string;
-  commands: readonly ResolvedAppCommand[];
-  onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
-  onLoadCalendar?: (signal: AbortSignal) => Promise<BrowseShellSearchResponse<T>>;
-  onCalendarAccepted?: (
-    request: CalendarRouteRequest,
-    response: BrowseShellSearchResponse<T>,
-  ) => void;
-  onCalendarStatus?: (status: CalendarSessionStatus) => void;
-  onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
-  onLoadRecommendations?: (isCurrent: () => boolean) => Promise<BrowseShellSearchResponse<T>>;
-  settings?: KitsuneConfig;
-  onQueueSelected?: (value: T) => Promise<void> | void;
-  onWatchlistSelected?: (value: T) => Promise<void> | void;
-  /** Resolves to the message to flash, so add and remove can read differently. */
-  onFavoriteSelected?: (value: T) => Promise<string | void> | string | void;
-  /** Live lookup, re-read on every render so a toggle shows immediately. */
-  isFavorite?: (value: T) => boolean;
-  onFollowSelected?: (value: T) => Promise<void> | void;
-  onPlayTrailer?: (url: string) => void;
-  onOpenLink?: (url: string) => void;
-  onResolve: (action: ShellAction, value?: T) => void;
-  /** Enter landed on a JUMP TO title row. */
-  onTitlePick?: (entry: LocalTitleEntry) => void;
-  onSubmit: (value: T) => void;
-  onCancel: () => void;
-  /**
-   * Dwell prefetch: fired ~500ms after a result row stops moving, warming what
-   * Enter would pay (identity, detail, episode catalogs). Abortable via the
-   * passed signal; silent by contract.
-   */
-  onPrefetchOption?: (value: T, signal: AbortSignal) => void;
-  /**
-   * `z` while a session-undo entry is live. Routed here (not the keybinding
-   * registry) so overlays, command mode, and text focus each decide first —
-   * the callback itself no-ops when nothing is journaled.
-   */
-  onUndo?: () => void;
-  /** Fires when a command is picked from this shell's `/` palette. */
-  onPaletteCommand?: (commandId: AppCommandId) => void;
-  idleContext?: import("./types").BrowseIdleContext;
-  loadIdleContext?: BrowseIdleContextLoader;
-  /**
-   * Fast catalog suggest for the type-ahead band — one registry-service call,
-   * abortable; never the provider-lane search. Absent → local-only band.
-   */
-  onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
-  /** Sync local corpus read (watched / followed / lists / playlists). */
-  loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
-  /** Your progress and offline state for a title, for the details sheet. */
-  detailsContextFor?: (titleId: string) => DetailsSheetLocalContext;
-  /** Test seam: keystroke → catalog-fetch debounce. Defaults to the standard delay. */
-  suggestionDebounceMs?: number;
-  /** Local title source — consulted once per palette open for the JUMP TO section. */
-  localTitles?: () => readonly LocalTitleEntry[];
-}) {
+}: BrowseShellProps<T>) {
   recordRender("browse");
   const viewport = useDebouncedViewportPolicy("browse", {
     zen: settings?.zenMode,
@@ -374,7 +289,14 @@ export function BrowseShell<T>({
     value: commandInput,
     onChange: (nextValue) => {
       setCommandInput(nextValue);
-      setHighlightedCommandIndex(0);
+      setHighlightedCommandIndex(
+        defaultPaletteSelectionIndex(
+          nextValue,
+          commands,
+          matchLocalTitles(titleEntries, nextValue),
+          { catalogSearch: true },
+        ),
+      );
     },
     onRedraw: clearShellScreen,
   });
@@ -628,10 +550,20 @@ export function BrowseShell<T>({
   // Snapshot title entries once per open — the matcher stays a pure in-memory
   // index against this list, so a keystroke never hits storage.
   const openPalette = useCallback(() => {
-    setTitleEntries(localTitles?.() ?? EMPTY_TITLE_ENTRIES);
+    const entries = localTitles?.() ?? EMPTY_TITLE_ENTRIES;
+    setTitleEntries(entries);
     setCommandMode(true);
-    setHighlightedCommandIndex(0);
-  }, [localTitles]);
+    setHighlightedCommandIndex(
+      defaultPaletteSelectionIndex(
+        commandInput,
+        commands,
+        matchLocalTitles(entries, commandInput),
+        {
+          catalogSearch: true,
+        },
+      ),
+    );
+  }, [commandInput, commands, localTitles]);
 
   const updateQuery = useCallback(
     (nextValue: string) => {
@@ -1491,7 +1423,9 @@ export function BrowseShell<T>({
       submittedInput === commandInput
         ? titleMatches
         : matchLocalTitles(titleEntries, submittedInput);
-    const row = resolveHighlightedPaletteRow(submittedInput, commands, submittedTitles, index);
+    const row = resolveHighlightedPaletteRow(submittedInput, commands, submittedTitles, index, {
+      catalogSearch: true,
+    });
     if (row?.kind === "command" && row.command.enabled) {
       setCommandMode(false);
       onPaletteCommand?.(row.command.id);
@@ -1506,6 +1440,13 @@ export function BrowseShell<T>({
       setCommandInput("");
       setHighlightedCommandIndex(0);
       onTitlePick?.(row.match.entry);
+    }
+    if (row?.kind === "search") {
+      setCommandMode(false);
+      setCommandInput("");
+      setHighlightedCommandIndex(0);
+      setQuery(row.query);
+      void runSearch(row.query);
     }
   }
 
@@ -1627,7 +1568,9 @@ export function BrowseShell<T>({
         }
         return;
       }
-      const selectable = paletteSelectableCount(commandInput, commands, titleMatches);
+      const selectable = paletteSelectableCount(commandInput, commands, titleMatches, {
+        catalogSearch: true,
+      });
       if (key.upArrow) {
         setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
@@ -2685,6 +2628,7 @@ export function BrowseShell<T>({
           cursor={commandEditor.cursor}
           commands={commands}
           highlightedIndex={highlightedCommandIndex}
+          catalogSearch
           titleMatches={titleMatches}
           maxVisible={getBrowseCommandPaletteMaxVisible(
             viewport.rows,

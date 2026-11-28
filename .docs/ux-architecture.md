@@ -81,11 +81,12 @@ from every provider.
 - command palettes should open with an immediately highlighted default action and still support zero-typing keyboard browsing
 - command palettes should group actions by `Global` and `Context` rather than by implementation source
 - command palettes should imply the recommended action through default highlight rather than extra “recommended” noise in every row
-- command palettes should also match locally-known titles (`JUMP TO`) once the input is at least two characters — titles are read from local state only (history, queue, followed, lists, playlists), never the network; commands keep precedence over title rows; the title section collapses on empty input; a title pick lands on the same title→episode flow a browse selection uses
+- command palettes should also match locally-known titles (`JUMP TO`) once the input is at least two characters — titles are read from local state only (history, queue, followed, lists, playlists), never the network. Rows rank in this order: exact command, command prefix, local-title prefix/word-start, fuzzy command, fuzzy title; a command exact/prefix match suppresses unrelated fuzzy command noise. The title section collapses on empty input; a title pick lands on the same title→episode flow a browse selection uses. In Browse, a query of at least two characters with no exact/prefix match appends `Search catalog for "<query>"` last; that row owns initial Enter and reuses the current lane's normal search path
 
 Search and palette Enter submit the editor's current input draft even when text
 and Enter arrive before React commits a frame. Pending palette text resets the
-selection to the first match; it must never execute a command from the previous
+selection to the first match (or the final catalog-search fallback when that
+fallback is the deliberate default); it must never execute a command from the previous
 query. This applies to Browse and the shared picker/post-play input hook.
 
 ### Hotkey philosophy
@@ -440,6 +441,8 @@ get no decorative animation.
 ## Picker Filtering
 
 - filterable pickers are the default for season, episode, provider, subtitle, history, and settings flows
+- fixed action dialogs use compact picker chrome: at most six rows hide the filter by default, while callers may declare `filter: "always"` or `"never"`; arrows still wrap, positional number keys activate rows, and explicit letter shortcuts remain available
+- data-driven pickers that can grow beyond the compact threshold keep type-to-filter behavior
 - picker filtering should keep terminal-style editing semantics where practical
 - if a picker filter is non-empty, the first `Esc` clears the filter and the second `Esc` closes the picker
 - picker states should keep a compact local title strip with:

@@ -596,10 +596,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // main-line measurement, all shell/onboarding surface code and copy plus the
 // doctor text-module split. No dependency or asset. 3349 KiB is the smallest
 // whole-KiB budget over that measurement and leaves 484 bytes; public
-// launcher budgets are unchanged. Merging #864's Windows executable evidence
-// classifier onto that shell tree measured 3,436,246 bytes with Bun 1.4.5:
-// +7,354, no dependency or asset. 3356 KiB is the smallest whole-KiB budget
-// over the merged measurement and leaves 298 bytes.
+// launcher budgets are unchanged.
+// The shell-v4 failover banner, domain failure-class move, and playback-issue
+// panel measured 3,435,029 bytes with Bun 1.4.5: +6,137 over 3,428,892.
+// No dependency or asset. 3355 KiB is the smallest whole-KiB budget over that
+// measurement and leaves 491 bytes.
+// Merging #864's Windows executable evidence classifier onto that shell tree
+// measured 3,436,246 bytes with Bun 1.4.5: +7,354, no dependency or asset.
+// 3356 KiB is the smallest whole-KiB budget over the merged measurement and
+// leaves 298 bytes.
 // Catalog mirror fallback and cache generations (#746, #742, #743: host
 // classification, the cold-mirror wait, and generation-gated cache writes)
 // on top measured 3,425,214 bytes: +3,753. No dependency or asset.
@@ -622,7 +627,21 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // malformed-discover fixes) measured 3,440,023 bytes with Bun 1.4.5: +3,777
 // over the #864 merged tree. No dependency or asset. 3360 KiB is the smallest
 // whole-KiB budget over that measurement and leaves 617 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_360;
+// This branch (the failover banner, the playback-issue panel, and clearing a
+// mid-stream notice on the next playing status) merged onto that tree
+// measured 3,446,377 bytes with Bun 1.4.5: +6,354 over 3,440,023. No
+// dependency or asset. 3366 KiB is the smallest whole-KiB budget over that
+// measurement and leaves 407 bytes.
+// The shell-v4 compact picker / palette-ranking branch merged onto that catalog
+// tree measured 3,443,038 bytes with Bun 1.4.5: +3,015. No dependency or asset;
+// dead palette title chrome and the oversized shell files were trimmed first.
+// 3363 KiB is the smallest whole-KiB budget over that measurement and leaves
+// 674 bytes; public launcher budgets are unchanged.
+// Merging the compact-picker branch onto the failover-banner tree (#876)
+// measured 3,449,390 bytes with Bun 1.4.5: +3,013 over 3,446,377. No
+// dependency or asset. 3369 KiB is the smallest whole-KiB budget over that
+// measurement and leaves 466 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_369;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -1,18 +1,9 @@
+import type { PlaybackFailureClass } from "@/domain/playback/playback-failure-class";
 import type { PlaybackResult } from "@/domain/types";
 
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
-export type PlaybackFailureClass =
-  | "none"
-  | "network-buffering"
-  | "slow-stream"
-  | "expired-stream"
-  | "seek-stuck"
-  | "ipc-stuck"
-  | "player-exited"
-  | "video-not-decoding"
-  | "video-lost"
-  | "unknown";
+export type { PlaybackFailureClass } from "@/domain/playback/playback-failure-class";
 
 export interface PlaybackRecoveryGuidance {
   readonly action: "none" | "wait" | "refresh" | "pick-stream" | "relaunch" | "inspect";

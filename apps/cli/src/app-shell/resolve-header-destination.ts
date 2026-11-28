@@ -23,7 +23,19 @@ export function resolveHeaderDestination(input: {
     return getRootOverlayTitle(rootOverlay, state as SessionState);
   }
 
-  if (state.playbackStatus === "loading" || playbackActive) {
+  if (state.playbackStatus === "error") {
+    return "Playback issue";
+  }
+
+  if (state.playbackStatus === "loading" || state.playbackStatus === "ready") {
+    return "Resolving";
+  }
+
+  if (state.playbackStatus === "idle" && state.view === "details" && state.currentTitle) {
+    return "Resolving";
+  }
+
+  if (playbackActive) {
     return "Now Playing";
   }
 

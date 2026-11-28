@@ -73,6 +73,45 @@ describe("resolveHeaderDestination", () => {
     ).toBe("Post-play");
   });
 
+  test("playback that has not launched is Resolving, and a failure is Playback issue", () => {
+    expect(
+      resolveHeaderDestination({
+        state: { ...baseState, playbackStatus: "ready" },
+        rootOverlay: null,
+        rootContent: null,
+        browseDestinationLabel: "Search",
+        playbackActive: true,
+      }),
+    ).toBe("Resolving");
+    expect(
+      resolveHeaderDestination({
+        state: { ...baseState, playbackStatus: "loading" },
+        rootOverlay: null,
+        rootContent: null,
+        browseDestinationLabel: "Search",
+        playbackActive: false,
+      }),
+    ).toBe("Resolving");
+    expect(
+      resolveHeaderDestination({
+        state: { ...baseState, playbackStatus: "playing" },
+        rootOverlay: null,
+        rootContent: null,
+        browseDestinationLabel: "Search",
+        playbackActive: true,
+      }),
+    ).toBe("Now Playing");
+    expect(
+      resolveHeaderDestination({
+        state: { ...baseState, playbackStatus: "error" },
+        rootOverlay: null,
+        rootContent: null,
+        browseDestinationLabel: "Search",
+        playbackActive: false,
+      }),
+    ).toBe("Playback issue");
+  });
+
   test("browse destination only when browse is visible", () => {
     expect(
       resolveHeaderDestination({

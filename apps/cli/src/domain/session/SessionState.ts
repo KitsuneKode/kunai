@@ -8,6 +8,7 @@ import { applyCatalogDetailToTitle } from "@/domain/catalog/apply-title-detail";
 
 import type { TitleDetail } from "../catalog/title-detail";
 import { videoMetaFromSearchResult } from "../media/video-meta";
+import type { PlaybackFailoverNotice } from "../playback/playback-failover-notice";
 import {
   INITIAL_PLAYBACK_GENERATION,
   type PlaybackGeneration,
@@ -33,6 +34,7 @@ import {
   type ResponsiveLayoutState,
   type ViewportSize,
 } from "./layout";
+import { reducePlaybackSessionTransition } from "./session-playback-transition";
 
 export type ShellMode = "series" | "anime" | "youtube";
 export type ShellView =
@@ -215,6 +217,11 @@ export interface SessionState {
   /** Pre-formatted watch-time line for the series-complete celebration; null when hidden. */
   readonly watchTimeSummary: string | null;
   readonly playbackProblem: PlaybackProblem | null;
+  /** Failover notice the shell renders. A mid-stream named hop clears on the next `playing`. */
+  readonly playbackFailover: PlaybackFailoverNotice | null;
+  readonly failoverAwaitingPlayback: boolean;
+  /** Failure panel asks for Tracks; the playback loop opens it. */
+  readonly playbackRecoveryRequest: "tracks" | null;
   readonly resolveRetryCount: number;
   /**
    * Providers already attempted in the current episode's resolve/fallback
@@ -289,6 +296,8 @@ export type StateTransition =
   | { type: "SET_WATCH_TIME_SUMMARY"; summary: string | null }
   | { type: "SET_PLAYBACK_PROBLEM"; problem: PlaybackProblem }
   | { type: "CLEAR_PLAYBACK_PROBLEM" }
+  | { type: "SET_PLAYBACK_FAILOVER"; failover: PlaybackFailoverNotice | null }
+  | { type: "SET_PLAYBACK_RECOVERY_REQUEST"; request: "tracks" | null }
   | { type: "SET_RESOLVE_RETRY_COUNT"; count: number }
   | { type: "RECORD_FALLBACK_TRIED_PROVIDERS"; providerIds: readonly string[] }
   | { type: "OPEN_OVERLAY"; overlay: OverlayState }
@@ -371,6 +380,9 @@ export function createInitialState(
     playbackNote: null,
     watchTimeSummary: null,
     playbackProblem: null,
+    playbackFailover: null,
+    failoverAwaitingPlayback: false,
+    playbackRecoveryRequest: null,
     resolveRetryCount: 0,
     fallbackTriedProviderIds: [],
     searchQuery: "",
@@ -387,6 +399,8 @@ export function createInitialState(
 }
 
 export function reduceState(state: SessionState, transition: StateTransition): SessionState {
+  const playback = reducePlaybackSessionTransition(state, transition);
+  if (playback) return playback;
   switch (transition.type) {
     case "SET_MODE": {
       if (state.mode === transition.mode && state.provider === transition.provider) {
@@ -507,6 +521,9 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         stream: null,
         playbackStatus: "idle",
         playbackProblem: null,
+        playbackFailover: null,
+        failoverAwaitingPlayback: false,
+        playbackRecoveryRequest: null,
       };
 
     case "SET_TITLE_DETAIL": {
@@ -569,28 +586,6 @@ export function reduceState(state: SessionState, transition: StateTransition): S
 
     case "SET_STREAM":
       return { ...state, stream: transition.stream };
-
-    case "SET_PLAYBACK_STATUS":
-      const keepPlaybackFeedback =
-        transition.clearFeedback !== true &&
-        (transition.status === "loading" ||
-          transition.status === "buffering" ||
-          transition.status === "seeking" ||
-          transition.status === "stalled" ||
-          transition.status === "playing" ||
-          transition.status === "paused");
-      return {
-        ...state,
-        playbackStatus: transition.status,
-        playbackGeneration: transition.generation ?? state.playbackGeneration,
-        playbackError: transition.error ?? null,
-        playbackDetail: keepPlaybackFeedback ? state.playbackDetail : null,
-        playbackNote: keepPlaybackFeedback ? state.playbackNote : null,
-        playbackProblem: transition.status === "loading" ? null : state.playbackProblem,
-        ...(transition.status === "idle" || transition.status === "finished"
-          ? { currentAnimeEpisodes: null }
-          : {}),
-      };
 
     case "SET_PLAYBACK_FEEDBACK":
       return {
