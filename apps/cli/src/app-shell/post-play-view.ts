@@ -86,7 +86,7 @@ export type PostPlayCelebration = {
 
 export type PostPlayNextUpHero = {
   /** "next-episode" = binge the current series; "queue" = cross-title queue head. */
-  readonly kind: "next-episode" | "queue" | "resume" | "next-season";
+  readonly kind: "next-episode" | "queue" | "next-season";
   readonly label: string;
   readonly meta: string;
 };
@@ -262,12 +262,9 @@ function buildUpNextCard(
 // series first, else the cross-title queue head) but with state-specific framing.
 function buildNextUpHero(
   props: BuildPostPlayViewProps,
-  variant: "next-episode" | "resume" | "next-season" | "queue-only",
+  variant: "next-episode" | "next-season" | "queue-only",
 ): PostPlayNextUpHero | undefined {
-  const { nextEpisodeLabel, queueNextLabel, titleDetail, autoplayPaused, resumeLabel } = props;
-  if (variant === "resume" && resumeLabel) {
-    return { kind: "resume", label: resumeLabel, meta: "same stream · same position" };
-  }
+  const { nextEpisodeLabel, queueNextLabel, titleDetail, autoplayPaused } = props;
   if (variant !== "queue-only" && nextEpisodeLabel) {
     return {
       kind: variant === "next-season" ? "next-season" : "next-episode",
@@ -458,7 +455,6 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
   if (resumeLabel) {
     return {
       heroKind: "stopped-early",
-      nextUpHero: buildNextUpHero(props, "resume"),
       heroLabel: "⏸ stopped early",
       heroColor: "accent",
       // Where you stopped, not how far into the season you are. Films get one

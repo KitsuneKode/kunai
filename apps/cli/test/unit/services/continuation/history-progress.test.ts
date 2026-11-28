@@ -48,6 +48,7 @@ test("isFinished never infers completion from near-end progress", () => {
 test("formatTimestamp renders mm:ss and h:mm:ss", () => {
   expect(formatTimestamp(75)).toBe("1:15");
   expect(formatTimestamp(3725)).toBe("1:02:05");
+  expect(formatTimestamp(Number.NaN)).toBe("0:00");
 });
 
 test("historyContentType keeps episodic anime as series", () => {

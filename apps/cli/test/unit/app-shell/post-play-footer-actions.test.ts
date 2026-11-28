@@ -41,9 +41,9 @@ describe("buildPostPlayFooterActions", () => {
     );
 
     expect(actions.map((action) => `${action.key}:${action.label}:${action.action}`)).toEqual([
-      "n:resume:resume",
-      "o:source:source",
+      "enter:resume:resume",
       "r:replay:replay",
+      "s:search:search",
       "m:menu:menu",
       "/:commands:command-mode",
     ]);

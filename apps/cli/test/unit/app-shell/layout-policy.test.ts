@@ -4,6 +4,7 @@ import {
   getBrowseChromeRows,
   getBrowseListMaxVisible,
   getBrowseCommandPaletteMaxVisible,
+  getBrowseDetailsOverlayMaxLines,
   getCommandPaletteVisibleCommandCount,
   getFooterReservedRows,
   getOverlayContentViewport,
@@ -87,8 +88,8 @@ describe("getShellViewportPolicy", () => {
 
   test("browse command palette budget stays bounded on common terminal heights", () => {
     expect(getBrowseCommandPaletteMaxVisible(24, false, false)).toBeGreaterThanOrEqual(1);
-    expect(getBrowseCommandPaletteMaxVisible(30, false, false)).toBeLessThanOrEqual(8);
-    expect(getBrowseCommandPaletteMaxVisible(30, true, true)).toBeLessThanOrEqual(5);
+    expect(getBrowseCommandPaletteMaxVisible(30, false, false)).toBeLessThanOrEqual(9);
+    expect(getBrowseCommandPaletteMaxVisible(30, true, true)).toBeLessThanOrEqual(6);
     expect(getBrowseCommandPaletteMaxVisible(48, false, false)).toBe(18);
     expect(getBrowseCommandPaletteMaxVisible(48, false, false)).toBeGreaterThanOrEqual(12);
   });
@@ -139,7 +140,8 @@ describe("getShellViewportPolicy", () => {
 
   test("preview rail appears after the wide breakpoint so the list keeps priority", () => {
     expect(getShellViewportPolicy("browse", 128, 30).wideBrowse).toBe(true);
-    expect(getShellViewportPolicy("browse", 128, 30).previewRail).toBe(false);
+    expect(getShellViewportPolicy("browse", 119, 30).previewRail).toBe(false);
+    expect(getShellViewportPolicy("browse", 120, 30).previewRail).toBe(true);
     expect(getShellViewportPolicy("browse", 144, 30).previewRail).toBe(true);
   });
 
@@ -238,6 +240,12 @@ describe("getShellViewportPolicy", () => {
     expect(withTransientReserved).toBeLessThan(
       getBrowseListMaxVisible(30, chromeRows, ROOT_CHROME_ROWS, 0),
     );
+  });
+
+  test("browse details sheet height leaves the footer visible at 40×22", () => {
+    expect(getBrowseDetailsOverlayMaxLines(22)).toBe(8);
+    expect(getBrowseDetailsOverlayMaxLines(32)).toBe(18);
+    expect(getBrowseDetailsOverlayMaxLines(16)).toBe(4);
   });
 
   test("overlay content viewport subtracts root chrome, transient row, and overlay host chrome", () => {

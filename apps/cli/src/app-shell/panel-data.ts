@@ -21,7 +21,10 @@ import {
   formatTimestamp,
   isFinished,
 } from "@/services/continuation/history-progress";
-import { buildDiagnosticsInsight } from "@/services/diagnostics/diagnostics-insight";
+import {
+  buildDiagnosticsInsight,
+  type BuildDiagnosticsInsightInput,
+} from "@/services/diagnostics/diagnostics-insight";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory";
@@ -31,12 +34,8 @@ import {
   formatProviderHealthBadge,
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
-import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { describePresenceConfiguration } from "@/services/presence/PresenceServiceImpl";
-import type {
-  HistoryProgress,
-  ReleaseProgressDiagnosticsSummary,
-} from "@/services/storage/storage-read-models";
+import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import type { YoutubeDiagnosticsProbe } from "@/services/youtube/youtube-diagnostics-probes";
 import {
   extractYoutubeProbeFromEvents,
@@ -144,23 +143,9 @@ export function buildAboutPanelLines({
   ];
 }
 
-export type DiagnosticsPanelLineInput = {
-  state: SessionState;
-  recentEvents: readonly DiagnosticEvent[];
+export type DiagnosticsPanelLineInput = Omit<BuildDiagnosticsInsightInput, "memorySnapshot"> & {
   capabilitySnapshot?: CapabilitySnapshot | null;
-  downloadSummary?: {
-    active: number;
-    completed: number;
-    failed?: number;
-    /** Completed downloads whose sidecars still need a pass; not counted in `failed`. */
-    repairable?: number;
-  } | null;
-  releaseSummary?: { titleCount: number; episodeCount: number } | null;
-  releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
-  presenceSnapshot?: PresenceSnapshot | null;
-  memorySamples?: readonly RuntimeMemorySample[];
   providers?: readonly ProviderMetadata[];
-  getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
   youtubeProbe?: YoutubeDiagnosticsProbe | null;
   developerMode?: boolean;
   /** Override span expand/collapse; null/undefined uses newest-expanded defaults. */
@@ -212,6 +197,7 @@ export function buildDiagnosticsPanelLines({
   releaseSummary,
   releaseDiagnostics,
   presenceSnapshot,
+  networkAvailable,
   memorySamples,
   providers,
   getProviderHealth,
@@ -230,6 +216,7 @@ export function buildDiagnosticsPanelLines({
     releaseSummary,
     releaseDiagnostics,
     presenceSnapshot,
+    networkAvailable,
     memorySamples,
     getProviderHealth,
   });

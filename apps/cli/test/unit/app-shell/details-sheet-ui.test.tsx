@@ -20,7 +20,7 @@ describe("DetailsSheet", () => {
     expect(frame).toContain("░");
   });
 
-  it("renders synopsis, facts, links and actions once loaded", () => {
+  it("renders synopsis, facts and links once loaded", () => {
     const detail = {
       id: "1",
       type: "series",
@@ -43,14 +43,12 @@ describe("DetailsSheet", () => {
     expect(frame).toContain("trailer");
   });
 
-  // Neon features review #4: the footer advertised `+ queue`, `w follow` and
-  // `e episodes`, none of which the sheet's key handler binds.
-  it("advertises only the keys the sheet binds", () => {
+  it("leaves action discovery to the shell footer instead of duplicating it in the sheet", () => {
     const model = buildDetailsSheet({ seed, detail: null, history: null, availability: null });
     const frame = captureFrame(<DetailsSheet model={model} seasonsExpanded={false} width={90} />, {
       columns: 100,
     });
-    expect(frame).toContain("q queue · w watchlist · d download");
+    expect(frame).not.toContain("q queue");
     expect(frame).not.toContain("+ queue");
     expect(frame).not.toContain("w follow");
     expect(frame).not.toContain("e episodes");

@@ -2,6 +2,7 @@ import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
+import { libraryResumeCardCopy } from "@/app-shell/library-resume-card-copy";
 import {
   buildLibraryFlatRows,
   buildLibraryShelfSections,
@@ -55,25 +56,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { routeListFilterKey } from "./list-filter-keys";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
-export function libraryResumeCardCopy(input: {
-  readonly titleName: string;
-  readonly nextPlayableEpisodeLabel?: string;
-}) {
-  if (plainModeEnabled()) {
-    return {
-      label: input.nextPlayableEpisodeLabel
-        ? `${input.nextPlayableEpisodeLabel} offline`
-        : input.titleName,
-      action: "enter",
-    };
-  }
-  return {
-    label: input.nextPlayableEpisodeLabel
-      ? `▸ Resume ${input.nextPlayableEpisodeLabel} offline`
-      : `▸ Open ${input.titleName}`,
-    action: "↵ enter",
-  };
-}
+export { libraryResumeCardCopy } from "@/app-shell/library-resume-card-copy";
 
 type TabId = "library" | "queue";
 
@@ -97,6 +80,7 @@ export function LibraryShell({
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
+  const [libraryRowCount, setLibraryRowCount] = useState(0);
   const downloadsEnabled = container.config.downloadsEnabled;
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
@@ -152,6 +136,7 @@ export function LibraryShell({
             container={container}
             onClose={onClose}
             onNavigateToQueue={() => setTab("queue")}
+            onRowCountChange={setLibraryRowCount}
           />
         )}
       </Box>
@@ -161,7 +146,7 @@ export function LibraryShell({
           mode="minimal"
           actions={selectFooterActions(
             tab === "library"
-              ? libraryFooterActions()
+              ? libraryFooterActions({ hasRows: libraryRowCount > 0 })
               : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
             "minimal",
             viewport.columns,
@@ -194,10 +179,12 @@ function LibraryTab({
   container,
   onClose,
   onNavigateToQueue,
+  onRowCountChange,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToQueue: () => void;
+  onRowCountChange: (count: number) => void;
 }) {
   const suspended = useRootContentSuspended();
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
@@ -267,6 +254,9 @@ function LibraryTab({
   );
 
   const totalRows = flatRows.length;
+  useEffect(() => {
+    onRowCountChange(totalRows);
+  }, [onRowCountChange, totalRows]);
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
   const maxVisible = getPickerListMaxVisible(
     viewport.rows,

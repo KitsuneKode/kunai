@@ -52,6 +52,8 @@ function humanReadableRootStatus(raw: string): string {
       return "Resolving…";
     case "searching":
       return "Searching…";
+    case "issue":
+      return "issue";
     case "paused":
       return "Paused";
     default:
@@ -61,7 +63,7 @@ function humanReadableRootStatus(raw: string): string {
 }
 
 function headerTone(rootStatus: string): ShellStatusTone {
-  if (rootStatus === "error") return "error";
+  if (rootStatus === "error" || rootStatus === "issue") return "error";
   if (rootStatus === "playing" || rootStatus === "ready" || rootStatus === "idle") return "success";
   if (
     rootStatus === "searching" ||

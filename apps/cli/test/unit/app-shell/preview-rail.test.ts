@@ -25,7 +25,8 @@ describe("PreviewRail helpers", () => {
   });
 
   test("collapses rail before list on narrow terminals", () => {
-    expect(shouldRenderPreviewRail({ columns: 100, hasModel: true })).toBe(false);
+    expect(shouldRenderPreviewRail({ columns: 119, hasModel: true })).toBe(false);
+    expect(shouldRenderPreviewRail({ columns: 120, hasModel: true })).toBe(true);
     expect(shouldRenderPreviewRail({ columns: 132, hasModel: true })).toBe(true);
   });
 });

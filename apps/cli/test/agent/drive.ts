@@ -80,7 +80,8 @@ function usage(): never {
   --mpv fake|none          PATH-shim fake mpv (default: none)
   --fake-mpv-mode <m>      normal | fail-pre-loaded | hold
   --width N / --rows N     terminal size (default: 100x30)
-  --set-env K=V            extra env for the session (repeatable)`);
+  --set-env K=V            extra env for the session (repeatable)
+  --network off|live       off (default) refuses non-loopback fetch; live is a dated run`);
   process.exit(2);
 }
 
@@ -175,6 +176,12 @@ function parseArgs(argv: string[]): DriveArgs {
         const mode = next();
         if (mode !== "normal" && mode !== "fail-pre-loaded" && mode !== "hold") usage();
         out.options = { ...out.options, fakeMpvMode: mode };
+        break;
+      }
+      case "--network": {
+        const network = next();
+        if (network !== "off" && network !== "live") usage();
+        out.options = { ...out.options, network };
         break;
       }
       case "--width":
@@ -277,6 +284,13 @@ async function main(): Promise<void> {
     }
 
     session.assertPrivacyClean();
+
+    const blocked = session.blockedHosts();
+    if (blocked.length > 0) {
+      // Not a failure: the app's offline path ran. It does mean this drive's
+      // result depends on that path, and the fixture does not cover the route.
+      console.log(`\n== network refused (${blocked.length}) ==\n${blocked.join("\n")}`);
+    }
 
     if (args.evidenceDir) {
       const bundle = writeEvidenceBundle({

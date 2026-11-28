@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  compactTrackFailureReason,
   chunkSubtitleGrid,
   disambiguateSubtitleLabels,
   subtitleGridColumns,
@@ -24,6 +25,19 @@ describe("tracksCountsHeader", () => {
 
   test("all zero + no provider is empty", () => {
     expect(tracksCountsHeader({ source: 0, quality: 0, audio: 0, subtitle: 0 })).toBe("");
+  });
+});
+
+describe("compactTrackFailureReason", () => {
+  test("compresses verbose failures to two-word recovery causes", () => {
+    expect(compactTrackFailureReason("Source timed out during resolve — try another mirror.")).toBe(
+      "resolve timeout",
+    );
+    expect(compactTrackFailureReason("Network offline")).toBe("network offline");
+    expect(compactTrackFailureReason("No playable stream was exposed for this source.")).toBe(
+      "no stream",
+    );
+    expect(compactTrackFailureReason(undefined)).toBe("resolve failed");
   });
 });
 
@@ -154,7 +168,7 @@ describe("tracksNavigationColumns", () => {
   test("two-pane subtitles use the rendered grid while other sections stay linear", () => {
     expect(tracksNavigationColumns(56, "subtitle")).toBe(1);
     expect(tracksNavigationColumns(80, "subtitle")).toBe(3);
-    expect(tracksNavigationColumns(140, "subtitle")).toBe(7);
+    expect(tracksNavigationColumns(140, "subtitle")).toBe(6);
     expect(tracksNavigationColumns(140, "source")).toBe(1);
     expect(tracksNavigationColumns(140, undefined)).toBe(1);
   });

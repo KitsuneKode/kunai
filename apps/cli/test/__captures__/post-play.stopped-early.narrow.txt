@@ -4,21 +4,8 @@
 
  ⏸ stopped early
 
- ╭──────────────────────────────────────────────────────────────────╮
- │ ▶ RESUME                                                         │
- │                                                                  │
- │                   resume S04E07  ·  18:49                        │
- │                   same stream · same position                    │
- │        DS         ↵ resume · e episodes                          │
- │                                                                  │
- │                                                                  │
- │                                                                  │
- ╰──────────────────────────────────────────────────────────────────╯
-
  ▌ ↵ Resume          same stream · same position [↵]
    Episodes          open season list [e]
    Replay            rewatch from the start [r]
 
  +3 picks · Frieren · Vinland Saga
-
- ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   x cancel

@@ -60,6 +60,19 @@ describe("resolveHeaderDestination", () => {
     ).toBe("Stats");
   });
 
+  test("post-playback names the post-play surface, not the queue overlay", () => {
+    expect(
+      resolveHeaderDestination({
+        state: baseState,
+        rootOverlay: null,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        rootContent: { id: 3, kind: "post-playback", element: null as never },
+        browseDestinationLabel: "Browse",
+        playbackActive: false,
+      }),
+    ).toBe("Post-play");
+  });
+
   test("browse destination only when browse is visible", () => {
     expect(
       resolveHeaderDestination({

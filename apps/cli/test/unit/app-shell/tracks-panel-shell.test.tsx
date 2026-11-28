@@ -120,6 +120,119 @@ describe("TracksPanelShell two-pane", () => {
     expect(frame).toContain("Neon");
   });
 
+  test("keeps current section values readable at 120 columns", () => {
+    const smoke: TrackCapabilityGroup[] = [
+      {
+        section: "provider",
+        title: "Provider",
+        selectable: true,
+        rows: [
+          {
+            section: "provider",
+            label: "SmokeServer",
+            value: "smoke",
+            selected: true,
+            enabled: false,
+            risk: "normal",
+          },
+          {
+            section: "provider",
+            label: "Fallback",
+            value: "fallback",
+            selected: false,
+            enabled: true,
+            risk: "normal",
+          },
+        ],
+      },
+    ];
+    const frame = captureFrame(
+      <TracksPanelShell groups={smoke} width={120} nav={createInitialTracksNav({})} />,
+      { columns: 120 },
+    );
+
+    expect(frame).toMatch(/Provider\s+SmokeServer/);
+    expect(frame).not.toMatch(/Provider\s+SmokeSer…/);
+  });
+
+  test("failed rows carry a concise recovery reason", () => {
+    const failed: TrackCapabilityGroup[] = [
+      {
+        section: "source",
+        title: "Source",
+        selectable: true,
+        rows: [
+          {
+            section: "source",
+            label: "Killjoy",
+            value: "killjoy",
+            selected: false,
+            enabled: true,
+            risk: "failed",
+            reason: "Source timed out during resolve — try another mirror.",
+          },
+        ],
+      },
+    ];
+    const frame = captureFrame(
+      <TracksPanelShell
+        groups={failed}
+        width={100}
+        nav={{ focusedPane: "options", sectionIndex: 0, optionIndex: 0 }}
+      />,
+      { columns: 100 },
+    );
+
+    expect(frame).toContain("Killjoy");
+    expect(frame).toContain("resolve timeout");
+  });
+
+  test("narrow width shows a section tab strip and a useful slice of the focused section", () => {
+    const many: TrackCapabilityGroup[] = [
+      {
+        section: "source",
+        title: "Source",
+        selectable: true,
+        rows: Array.from({ length: 16 }, (_, index) => ({
+          section: "source" as const,
+          label: `Server ${index}`,
+          value: `server-${index}`,
+          selected: index === 0,
+          enabled: index !== 0,
+          risk: "normal" as const,
+        })),
+      },
+      {
+        section: "quality",
+        title: "Quality",
+        selectable: false,
+        rows: [],
+      },
+      {
+        section: "subtitle",
+        title: "Subtitles",
+        selectable: false,
+        rows: [],
+      },
+    ];
+    const frame = captureFrame(
+      <TracksPanelShell
+        groups={many}
+        width={54}
+        height={25}
+        nav={{ focusedPane: "options", sectionIndex: 0, optionIndex: 0 }}
+      />,
+      { columns: 54, rows: 25 },
+    );
+
+    expect(frame).toContain("[Src]");
+    expect(frame).toContain("Qual");
+    expect(frame).toContain("Subs");
+    for (const index of [0, 1, 2, 3, 4, 5]) {
+      expect(frame).toContain(`Server ${index}`);
+    }
+  });
+
   test("empty groups renders a graceful message", () => {
     const frame = captureFrame(<TracksPanelShell groups={[]} width={80} />, { columns: 80 });
     expect(frame).toContain("No stream details");

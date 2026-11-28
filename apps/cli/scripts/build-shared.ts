@@ -583,7 +583,16 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // With the dedicated profile checks, launchers, and review fixes (#860),
 // Bun 1.4.5 measured 3,421,461 bytes: +11,013 over #861.
 // 3342 KiB leaves 747 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_342;
+// Shell-v4 quick wins were measured on their pre-merge branch: narrow
+// browse/palette/playback layout 3,327,248 bytes, tracks panel recovery
+// grammar 3,330,345 bytes, clean details-sheet overlay 3,331,426 bytes,
+// and the pre-#852 merged tree 3,332,234 bytes. The merged main+shell tree
+// measured 3,428,892 bytes with Bun 1.4.5: +7,431 over the profile/hwdec
+// main-line measurement, all shell/onboarding surface code and copy plus the
+// doctor text-module split. No dependency or asset. 3349 KiB is the smallest
+// whole-KiB budget over that measurement and leaves 484 bytes; public
+// launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_349;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
