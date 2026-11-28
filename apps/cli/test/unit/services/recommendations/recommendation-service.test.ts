@@ -374,6 +374,229 @@ describe("refresh, malformed rows and malformed answers", () => {
   });
 });
 
+describe("a late recommendation write cannot undo a refresh", () => {
+  const frozen = Date.parse("2026-11-28T12:00:00.000Z");
+
+  function repository() {
+    const db = openKunaiDatabase(":memory:");
+    runMigrations(db, "cache");
+    return new RecommendationCacheRepository(db);
+  }
+
+  function titled(title: string, id: number) {
+    return {
+      id,
+      media_type: "movie",
+      title,
+      release_date: "2020-01-01",
+      genre_ids: [18],
+    };
+  }
+
+  /**
+   * Holds every matching request that starts before `useFresh` until `release`.
+   * The clock stays frozen, so a timestamp freshness check cannot tell the
+   * refresh's row from the late one.
+   */
+  function phasedFetch(input: {
+    readonly hangWhen: (url: string) => boolean;
+    readonly respond: (url: string, phase: "old" | "fresh") => Response;
+  }) {
+    const started = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    let phase: "old" | "fresh" = "old";
+    globalThis.fetch = createFetchDouble(async (request) => {
+      const url = String(request);
+      if (phase === "old" && input.hangWhen(url)) {
+        started.resolve();
+        await gate.promise;
+        return input.respond(url, "old");
+      }
+      return input.respond(url, phase);
+    });
+    return {
+      started: started.promise,
+      release: () => gate.resolve(),
+      useFresh: () => {
+        phase = "fresh";
+      },
+    };
+  }
+
+  async function expectRefreshWins(input: {
+    readonly key: string;
+    readonly hangWhen: (url: string) => boolean;
+    readonly respond: (url: string, phase: "old" | "fresh") => Response;
+    readonly load: (
+      service: RecommendationServiceImpl,
+    ) => Promise<{ items: readonly { title: string }[] }>;
+  }): Promise<void> {
+    const originalFetch = globalThis.fetch;
+    setSystemTime(new Date(frozen));
+    const store = repository();
+    const service = new RecommendationServiceImpl(store);
+    const fetchPhase = phasedFetch(input);
+    try {
+      const late = input.load(service);
+      await fetchPhase.started;
+      fetchPhase.useFresh();
+      await service.clearCache();
+      const refreshed = await input.load(service);
+      expect(refreshed.items[0]?.title).toBe("Fresh");
+      fetchPhase.release();
+      await late;
+
+      const stored = store.get(input.key);
+      expect(stored).toBeDefined();
+      expect(JSON.parse(stored?.payloadJson ?? "{}")).toMatchObject({
+        items: [expect.objectContaining({ title: "Fresh" })],
+      });
+
+      let leaked = 0;
+      globalThis.fetch = createFetchDouble(async () => {
+        leaked += 1;
+        return new Response("{}", { status: 503 });
+      });
+      const again = await input.load(service);
+      expect(again.items[0]?.title).toBe("Fresh");
+      expect(leaked).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  test("getForTitle keeps the refresh when a pre-refresh request settles late", async () => {
+    await expectRefreshWins({
+      key: buildRecommendCacheKey("438631", "movie"),
+      hangWhen: () => true,
+      respond: (_url, phase) =>
+        Response.json({
+          results: [titled(phase === "old" ? "Old" : "Fresh", phase === "old" ? 1 : 2)],
+        }),
+      load: (service) => service.getForTitle("438631", "movie"),
+    });
+  });
+
+  test("getTrending keeps the refresh when a pre-refresh request settles late", async () => {
+    await expectRefreshWins({
+      key: buildRecommendCacheKey("trending", "trending"),
+      hangWhen: () => true,
+      respond: (_url, phase) =>
+        Response.json({
+          results: [titled(phase === "old" ? "Old" : "Fresh", phase === "old" ? 1 : 2)],
+        }),
+      load: (service) => service.getTrending(),
+    });
+  });
+
+  test("getPersonalizedByHistory keeps the refresh when a pre-refresh request settles late", async () => {
+    const seed = [
+      {
+        title: "Arrival",
+        type: "movie" as const,
+        titleId: "329865",
+        watchedAt: "2026-11-20T00:00:00.000Z",
+      },
+    ];
+    await expectRefreshWins({
+      key: buildRecommendCacheKey("movie:329865", "genre-affinity"),
+      hangWhen: (url) => url.includes("/discover/"),
+      respond: (url, phase) => {
+        if (url.includes("/movie/329865")) return Response.json({ genres: [{ id: 18 }] });
+        if (url.includes("/discover/tv")) return Response.json({ results: [] });
+        return Response.json({
+          results: [titled(phase === "old" ? "Old" : "Fresh", phase === "old" ? 1 : 2)],
+        });
+      },
+      load: (service) => service.getPersonalizedByHistory(seed),
+    });
+  });
+
+  test("getGenreAffinity keeps the refresh when a pre-refresh request settles late", async () => {
+    await expectRefreshWins({
+      key: buildRecommendCacheKey("18", "genre-affinity"),
+      hangWhen: (url) => url.includes("/discover/"),
+      respond: (url, phase) => {
+        if (url.includes("/discover/tv")) return Response.json({ results: [] });
+        return Response.json({
+          results: [titled(phase === "old" ? "Old" : "Fresh", phase === "old" ? 1 : 2)],
+        });
+      },
+      load: (service) => service.getGenreAffinity([18]),
+    });
+  });
+
+  test("an aborted getForTitle does not cache the response that arrives afterwards", async () => {
+    const originalFetch = globalThis.fetch;
+    setSystemTime(new Date(frozen));
+    const store = repository();
+    const service = new RecommendationServiceImpl(store);
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<Response>();
+    globalThis.fetch = createFetchDouble(async () => {
+      started.resolve();
+      return release.promise;
+    });
+    try {
+      const pending = service.getForTitle("438631", "movie", controller.signal);
+      await started.promise;
+      controller.abort();
+      release.resolve(Response.json({ results: [titled("Should Not Stick", 9)] }));
+      await pending;
+      expect(store.get(buildRecommendCacheKey("438631", "movie"))).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a discover call that loses the movie or tv half is not cached for the freshness window", async () => {
+    const originalFetch = globalThis.fetch;
+    setSystemTime(new Date(frozen));
+    const store = repository();
+    const service = new RecommendationServiceImpl(store);
+    let movieDown = true;
+    const seed = [
+      {
+        title: "Arrival",
+        type: "movie" as const,
+        titleId: "329865",
+        watchedAt: "2026-11-20T00:00:00.000Z",
+      },
+    ];
+    globalThis.fetch = createFetchDouble(async (request) => {
+      const url = String(request);
+      if (url.includes("/movie/329865")) return Response.json({ genres: [{ id: 18 }] });
+      if (url.includes("/discover/movie") || url.includes("/recommendations")) {
+        return movieDown
+          ? new Response("{}", { status: 503 })
+          : Response.json({ results: [titled("Movie Hit", 3)] });
+      }
+      if (url.includes("/discover/tv")) return Response.json({ results: [titled("TV Hit", 4)] });
+      return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+    });
+    try {
+      const affinityKey = buildRecommendCacheKey("18", "genre-affinity");
+      const partialAffinity = await service.getGenreAffinity([18]);
+      expect(partialAffinity.items.map((item) => item.title)).toEqual(["TV Hit"]);
+      expect(store.get(affinityKey)).toBeUndefined();
+
+      const historyKey = buildRecommendCacheKey("movie:329865", "genre-affinity");
+      const partialHistory = await service.getPersonalizedByHistory(seed);
+      expect(partialHistory.items.map((item) => item.title)).toEqual(["TV Hit"]);
+      expect(store.get(historyKey)).toBeUndefined();
+
+      movieDown = false;
+      clearTmdbSessionCache();
+      const full = await service.getGenreAffinity([18]);
+      expect(full.items.map((item) => item.title).sort()).toEqual(["Movie Hit", "TV Hit"]);
+      expect(store.get(affinityKey)).toBeDefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 type FetchHandler = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;
 
 function createFetchDouble(handler: FetchHandler): typeof fetch {

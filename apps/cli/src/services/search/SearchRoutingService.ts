@@ -362,7 +362,9 @@ export async function searchTitles(
 }
 
 /**
- * Text search for the TMDB catalog when every TMDB route failed. Wikidata
+ * Text search for the TMDB catalog when every TMDB host, including direct
+ * TMDB, has failed. A mirror 401/403 or HTML 4xx is a host failure inside the
+ * TMDB client and never reaches here. Wikidata
  * records TMDB's own ids, so a picked result is the same title a TMDB search
  * would have returned. Discover-style searches (filters, no text) cannot be
  * answered from Wikidata and keep the original failure.

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T13:30:00Z"
+lastReviewed: "2026-11-28T11:10:00Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -72,10 +72,16 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   "Trending this week · updated 3h ago", and retries the live chain after a
   minute instead of on every render.
 - **Recommendations** use the same idea. A row's `expires_at` is the 14-day
-  retention window and freshness is judged from the payload's `cachedAt`; the
+  retention window and freshness is the cache generation in the payload
+  (`createCacheGenerationGate` in `RecommendationServiceImpl`), not a
+  `cachedAt` compared with `Date.now()` — a same-millisecond refresh and a
+  fetch that started before the refresh both used to look fresh. The
   repository deletes a row on read once `expires_at` passes, so tying row expiry
   to the freshness TTL had made the stale fallback unreachable. A refresh whose
-  every upstream request failed never overwrites the last good answer.
+  every upstream request failed never overwrites the last good answer. A
+  discover call that loses either the movie half or the tv half is returned
+  but not stored, so a partial list cannot sit for the 24-hour freshness window.
+  A caller that aborts does not write.
 - **Fallbacks are stand-ins, not equivalents.** A saved primary list younger
   than 24 hours is shown (labelled) before any live fallback; Kitsu's list is
   labelled "Kitsu · popular this season". A fallback answer is reused for 60
@@ -88,12 +94,23 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   With a saved list on hand, a walk slower than 1.2 seconds hands the caller
   that list and keeps filling the cache.
 - **TMDB hosts** use a half-open breaker: when every host is inside its
-  5-minute failure window, one request at a time probes the host whose window
-  ends first, a failed probe holds further probes for 30 seconds, and any
-  answer (including a 4xx) closes the breaker. A **429** is not an answer: the
-  host is rested for 30 seconds and the walk moves on (and, with every host
-  rate limited, the saved copy below answers). A mirror that replies HTTP 200
-  with TMDB's error envelope (`success: false`) counts as that host failing.
+  5-minute failure window, one request at a time probes. If a direct credential
+  exists the probe is a direct host, not the mirror whose window ends first;
+  otherwise it is the host whose window ends first. A failed probe holds
+  further probes for 30 seconds, and a real answer (including a definitive 4xx)
+  closes the breaker. A **429** is not an answer: the host is rested for 30
+  seconds and the walk moves on (and, with every host rate limited, the saved
+  copy below answers). A mirror that replies HTTP 200 with TMDB's error
+  envelope (`success: false`) counts as that host failing. On a **keyless
+  mirror**, 401/403/405/410/451, any 3xx, and any non-JSON 4xx (an HTML 404
+  from a dead proxy) are that mirror failing: its breaker opens and the walk
+  moves on. Only a JSON 400 or 404 is TMDB's own answer. A keyed direct host
+  still treats 401 as a rejected credential and other 4xx as definitive.
+  Keyed and keyless requests both use `redirect: "manual"` so a redirect cannot
+  carry a credential and a 3xx is visible. Cold keyless mirrors share a budget
+  (`TmdbMirrorBudgetPolicy`, 1500 ms per mirror, 2500 ms total) and then the
+  walk goes straight to direct TMDB with the caller's remaining deadline.
+  Every non-ok body is cancelled. Credentials never go to a mirror.
 - **Cancelled callers** never start a TMDB request, and every shared in-flight
   request has a handler, so a request that fails after all its callers left can
   never surface as an unhandled rejection (which `main.ts` treats as fatal).
@@ -126,10 +143,19 @@ which also backs the trending last-known-good lists, wired in
 `bootstrap-persistence.ts`, kept 30 days). When every TMDB host fails with a
 transport error or a 5xx, `fetchTmdbJsonCached` serves the saved copy instead,
 so a series opened in the last month still lists its seasons and episodes, and
-per-title release info (next episode, release progress) still renders. A 4xx
-other than 429 is an answer, not an outage, and is never masked by a saved
-copy. Only a well-formed answer (a show with a `seasons` array, a season with
-an `episodes` array) may replace the saved copy.
+per-title release info (next episode, release progress) still renders. A
+definitive 4xx (a keyed host's 4xx, or a mirror's JSON 400/404) is an answer,
+not an outage, and is never masked by a saved copy. A mirror's 401/403 or HTML
+4xx is that mirror failing, so the saved copy can still answer once every host,
+including direct TMDB, has failed. Only a well-formed answer (a show with a
+`seasons` array, a season with an `episodes` array) may replace the saved copy.
+The episode picker and season list (`tmdb.ts`) commit through the same session
+generation as `clearTmdbSessionCache`. A 503 while checking an undated season
+is not "no episodes": the season list is not cached, and a late list cannot
+overwrite a newer one, so the picker cannot show `Old` while SQLite holds
+`Fresh`. Title detail uses the same rule for its 5-minute cache: a transient
+TMDB or AniList failure, or a failed undated-season check, skips the write;
+a thumbnail failure does not. One title's failure does not affect another.
 
 The saved copy is TMDB's own response, so numbering and identity are exactly
 what playback, downloads and history expect. A TVmaze fallback was built and

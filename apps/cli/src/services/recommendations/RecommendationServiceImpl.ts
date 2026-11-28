@@ -4,6 +4,7 @@
 // Falls back from videasy proxy to direct TMDB API on failure.
 
 import type { ContentType, SearchResult } from "@/domain/types";
+import { createCacheGenerationGate } from "@/infra/concurrency/cache-generation";
 import { parseCachedSearchResults } from "@/services/catalog/cached-search-results";
 import {
   recordFallbackCatalogAnswer,
@@ -21,7 +22,7 @@ import type {
 
 // ── Cache helpers (exported for tests) ────────────────────────────────────────
 
-export function buildRecommendCacheKey(id: string, type: ContentType | "trending"): string {
+export function buildRecommendCacheKey(id: string, type: string): string {
   return `recommend:${type}:${id}`;
 }
 
@@ -47,13 +48,18 @@ export const RECOMMENDATION_STALE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 const PERSONALIZED_HISTORY_LIMIT = 5;
 
-async function tmdbFetch(path: string): Promise<unknown> {
-  return fetchTmdbJsonCached(path);
+async function tmdbFetch(path: string, signal?: AbortSignal): Promise<unknown> {
+  return fetchTmdbJsonCached(path, signal);
 }
 
 // ── SQLite cache helpers ──────────────────────────────────────────────────────
 
-type CacheValue = { cachedAt: number; items: readonly SearchResult[] };
+type CacheValue = {
+  cachedAt: number;
+  items: readonly SearchResult[];
+  /** Session generation that wrote the row. Missing rows predate the gate and count as 0. */
+  generation: number;
+};
 
 // ── TMDB result → SearchResult ────────────────────────────────────────────────
 
@@ -84,10 +90,10 @@ function toSearchResult(
 // ── Implementation ────────────────────────────────────────────────────────────
 
 export class RecommendationServiceImpl implements RecommendationService {
-  constructor(private readonly cacheRepository: RecommendationCacheRepository) {}
+  /** Bumped by refresh. A fetch captures it and may commit only while it still matches. */
+  private readonly writes = createCacheGenerationGate();
 
-  /** Answers cached before this instant are not fresh (a user refresh). */
-  private freshAfter = 0;
+  constructor(private readonly cacheRepository: RecommendationCacheRepository) {}
 
   /**
    * A refresh forces live requests without deleting anything. Deleting the
@@ -96,13 +102,13 @@ export class RecommendationServiceImpl implements RecommendationService {
    * outage would need them.
    */
   async clearCache(): Promise<void> {
-    this.freshAfter = Date.now();
+    this.writes.invalidate();
     clearTmdbSessionCache();
   }
 
   private readCacheEntry(key: string, ttlMs: number): CacheValue | null {
     const parsed = this.readAnyCacheEntry(key);
-    if (!parsed || parsed.cachedAt <= this.freshAfter) return null;
+    if (!parsed || !this.writes.isCurrent({ value: parsed.generation })) return null;
     if (isCacheExpired(parsed.cachedAt, ttlMs)) return null;
     // A fresh entry is a recent live TMDB answer, so it counts as primary.
     recordRecommendationsAnswer(false);
@@ -116,10 +122,22 @@ export class RecommendationServiceImpl implements RecommendationService {
       const parsed: JsonValue = JSON.parse(entry.payloadJson);
       if (!isJsonObject(parsed) || !isJsonNumber(parsed.cachedAt)) return null;
       const items = parseCachedSearchResults(parsed.items);
-      return items ? { cachedAt: parsed.cachedAt, items } : null;
+      const generation = isJsonNumber(parsed.generation) ? parsed.generation : 0;
+      return items ? { cachedAt: parsed.cachedAt, items, generation } : null;
     } catch {
       return null;
     }
+  }
+
+  private commitCacheEntry(
+    key: string,
+    token: { readonly value: number },
+    items: readonly SearchResult[],
+    options: { readonly signal?: AbortSignal; readonly complete?: boolean },
+  ): void {
+    this.writes.commitIfFresh(token, options, () => {
+      this.writeCacheEntry(key, { cachedAt: Date.now(), items, generation: token.value });
+    });
   }
 
   private writeCacheEntry(key: string, value: CacheValue): void {
@@ -141,42 +159,49 @@ export class RecommendationServiceImpl implements RecommendationService {
     return { label: "", reason, items: stale.items, staleSince: stale.cachedAt };
   }
 
-  async getForTitle(tmdbId: string, type: ContentType): Promise<RecommendationSection> {
+  async getForTitle(
+    tmdbId: string,
+    type: ContentType,
+    signal?: AbortSignal,
+  ): Promise<RecommendationSection> {
     const key = buildRecommendCacheKey(tmdbId, type);
     const entry = this.readCacheEntry(key, TTL_SIMILAR);
     if (entry) {
       return { label: "", reason: "similar", items: entry.items };
     }
+    const token = this.writes.capture();
     const segment = type === "movie" ? "movie" : "tv";
-    const data = await fetchRecommendationData(`/${segment}/${tmdbId}/recommendations`);
+    const data = await fetchRecommendationData(`/${segment}/${tmdbId}/recommendations`, signal);
     // A 200 without a `results` array is a broken answer, not an empty one.
     if (!data || !Array.isArray(data.results)) return this.staleSection(key, "similar");
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r, segment === "movie" ? "movie" : "tv"))
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
+    this.commitCacheEntry(key, token, items, { signal, complete: true });
     return { label: "", reason: "similar", items };
   }
 
-  async getTrending(): Promise<RecommendationSection> {
+  async getTrending(signal?: AbortSignal): Promise<RecommendationSection> {
     const key = buildRecommendCacheKey("trending", "trending");
     const entry = this.readCacheEntry(key, TTL_TRENDING);
     if (entry) {
       return { label: "", reason: "trending", items: entry.items };
     }
-    const data = await fetchRecommendationData("/trending/all/week");
+    const token = this.writes.capture();
+    const data = await fetchRecommendationData("/trending/all/week", signal);
     if (!data || !Array.isArray(data.results)) return this.staleSection(key, "trending");
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r))
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
+    this.commitCacheEntry(key, token, items, { signal, complete: true });
     return { label: "", reason: "trending", items };
   }
 
   async getPersonalizedByHistory(
     historyEntries: readonly RecommendationHistorySeed[],
+    signal?: AbortSignal,
   ): Promise<RecommendationSection> {
     if (historyEntries.length === 0) {
       return { label: "", reason: "genre-affinity", items: [] };
@@ -195,12 +220,13 @@ export class RecommendationServiceImpl implements RecommendationService {
 
     const profileKey = buildRecommendCacheKey(
       recentUnique.map((entry) => `${entry.type}:${entry.titleId ?? entry.title}`).join("|"),
-      "genre-affinity" as ContentType,
+      "genre-affinity",
     );
     const cached = this.readCacheEntry(profileKey, TTL_SIMILAR);
     if (cached) {
       return { label: "", reason: "genre-affinity", items: cached.items };
     }
+    const token = this.writes.capture();
 
     const watchedTitles = new Set(
       recentUnique.map((entry: RecommendationHistorySeed) => normalizeTitle(entry.title)),
@@ -212,12 +238,14 @@ export class RecommendationServiceImpl implements RecommendationService {
     const seenTitleIds = new Set<string>();
     const genreProfiles = await Promise.all(
       (recentUnique as readonly RecommendationHistorySeed[]).map(async (entry) => {
-        const resolved = await resolveHistoryTitle(entry).catch(() => null);
+        const resolved = await resolveHistoryTitle(entry, signal).catch(() => null);
         if (!resolved) return null;
         const dedupeKey = `${resolved.mediaType}:${resolved.id}`;
         if (seenTitleIds.has(dedupeKey)) return null;
         seenTitleIds.add(dedupeKey);
-        const genres = await fetchTmdbGenres(resolved.id, resolved.mediaType).catch(() => []);
+        const genres = await fetchTmdbGenres(resolved.id, resolved.mediaType, signal).catch(
+          () => [],
+        );
         return { entry, genres };
       }),
     );
@@ -238,8 +266,8 @@ export class RecommendationServiceImpl implements RecommendationService {
     if (topGenres.length === 0) return this.staleSection(profileKey, "genre-affinity");
 
     const [movieCandidates, tvCandidates] = await Promise.all([
-      discoverByGenres(topGenres, "movie"),
-      discoverByGenres(topGenres, "tv"),
+      discoverByGenres(topGenres, "movie", signal),
+      discoverByGenres(topGenres, "tv", signal),
     ]);
     // null = that request failed; [] = a valid answer with no matches. Only a
     // total failure falls back; writing [] there would overwrite the last
@@ -264,27 +292,38 @@ export class RecommendationServiceImpl implements RecommendationService {
       .slice(0, 10)
       .map((entry) => entry.item);
     const items = best.length > 0 ? best : scored.slice(0, 10).map((entry) => entry.item);
-    this.writeCacheEntry(profileKey, { cachedAt: Date.now(), items });
+    this.commitCacheEntry(profileKey, token, items, {
+      signal,
+      complete: movieCandidates !== null && tvCandidates !== null,
+    });
     return { label: "", reason: "genre-affinity", items };
   }
 
-  async getGenreAffinity(topGenreIds: number[]): Promise<RecommendationSection> {
+  async getGenreAffinity(
+    topGenreIds: number[],
+    signal?: AbortSignal,
+  ): Promise<RecommendationSection> {
     if (topGenreIds.length === 0) return { label: "", reason: "genre-affinity", items: [] };
-    const key = buildRecommendCacheKey(topGenreIds.join("-"), "genre-affinity" as ContentType);
+    const key = buildRecommendCacheKey(topGenreIds.join("-"), "genre-affinity");
     const entry = this.readCacheEntry(key, TTL_SIMILAR);
     if (entry) {
       return { label: "", reason: "genre-affinity", items: entry.items };
     }
+    const token = this.writes.capture();
     const genres = topGenreIds.slice(0, 3).join(",");
     const [tvData, movieData] = await Promise.all([
       tmdbFetch(
         `/discover/tv?with_genres=${genres}&sort_by=vote_average.desc&vote_count.gte=200`,
+        signal,
       ).catch(() => null) as Promise<{ results?: Record<string, unknown>[] } | null>,
       tmdbFetch(
         `/discover/movie?with_genres=${genres}&sort_by=vote_average.desc&vote_count.gte=200`,
+        signal,
       ).catch(() => null) as Promise<{ results?: Record<string, unknown>[] } | null>,
     ]);
-    if (!tvData && !movieData) return this.staleSection(key, "genre-affinity");
+    const tvOk = tvData !== null && Array.isArray(tvData.results);
+    const movieOk = movieData !== null && Array.isArray(movieData.results);
+    if (!tvOk && !movieOk) return this.staleSection(key, "genre-affinity");
 
     const seen = new Set<string>();
     const items = [...(tvData?.results ?? []), ...(movieData?.results ?? [])]
@@ -297,15 +336,16 @@ export class RecommendationServiceImpl implements RecommendationService {
         return true;
       })
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
+    this.commitCacheEntry(key, token, items, { signal, complete: tvOk && movieOk });
     return { label: "", reason: "genre-affinity", items };
   }
 }
 
 async function fetchRecommendationData(
   path: string,
+  signal?: AbortSignal,
 ): Promise<{ results?: Record<string, unknown>[] } | null> {
-  return (await tmdbFetch(path).catch(() => null)) as {
+  return (await tmdbFetch(path, signal).catch(() => null)) as {
     results?: Record<string, unknown>[];
   } | null;
 }
@@ -339,6 +379,7 @@ function hasResolvableTmdbId(entry: RecommendationHistorySeed): boolean {
 
 async function resolveHistoryTitle(
   entry: RecommendationHistorySeed,
+  signal?: AbortSignal,
 ): Promise<{ id: string; mediaType: "movie" | "tv" } | null> {
   const mediaType = entry.type === "movie" ? "movie" : "tv";
   const titleId = entry.titleId?.trim() ?? "";
@@ -349,24 +390,30 @@ async function resolveHistoryTitle(
   if (tmdbPrefixed?.[1]) {
     return { id: tmdbPrefixed[1], mediaType };
   }
-  return resolveTmdbTitleByName(entry.title, mediaType);
+  return resolveTmdbTitleByName(entry.title, mediaType, signal);
 }
 
 async function resolveTmdbTitleByName(
   title: string,
   mediaType: "movie" | "tv",
+  signal?: AbortSignal,
 ): Promise<{ id: string; mediaType: "movie" | "tv" } | null> {
   if (title.length === 0) return null;
   const search = (await tmdbFetch(
     `/search/${mediaType}?query=${encodeURIComponent(title)}&include_adult=false&page=1`,
+    signal,
   )) as { results?: Record<string, unknown>[] };
   const match = (search.results ?? []).find((item) => String(item["id"] ?? "") !== "");
   if (!match) return null;
   return { id: String(match["id"]), mediaType };
 }
 
-async function fetchTmdbGenres(id: string, mediaType: "movie" | "tv"): Promise<readonly number[]> {
-  const details = (await tmdbFetch(`/${mediaType}/${id}`)) as {
+async function fetchTmdbGenres(
+  id: string,
+  mediaType: "movie" | "tv",
+  signal?: AbortSignal,
+): Promise<readonly number[]> {
+  const details = (await tmdbFetch(`/${mediaType}/${id}`, signal)) as {
     genres?: Array<{ id?: number }>;
   };
   return (details.genres ?? [])
@@ -377,10 +424,12 @@ async function fetchTmdbGenres(id: string, mediaType: "movie" | "tv"): Promise<r
 async function discoverByGenres(
   genreIds: readonly number[],
   mediaType: "movie" | "tv",
+  signal?: AbortSignal,
 ): Promise<readonly { item: SearchResult; genreIds: readonly number[] }[] | null> {
   const genres = genreIds.join(",");
   const data = (await tmdbFetch(
     `/discover/${mediaType}?with_genres=${genres}&sort_by=vote_average.desc&vote_count.gte=200&page=1`,
+    signal,
   ).catch(() => null)) as {
     results?: Record<string, unknown>[];
   } | null;
