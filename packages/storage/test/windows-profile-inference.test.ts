@@ -145,6 +145,28 @@ function addManifest(fs: VirtualWindowsFs, manifest: object | string): string {
   return MANIFEST_PATH;
 }
 
+function shortNameAliasFs(
+  fs: VirtualWindowsFs,
+  aliasRoot: string,
+  canonicalRoot: string,
+): WindowsProfileFs {
+  const rewrite = (path: string): string => {
+    const normalized = normalizeWindowsPath(path);
+    const key = pathKey(normalized);
+    const aliasKey = pathKey(aliasRoot);
+    if (key === aliasKey) return canonicalRoot;
+    if (key.startsWith(`${aliasKey}\\`)) {
+      return `${canonicalRoot}${normalized.slice(aliasRoot.length)}`;
+    }
+    return path;
+  };
+  return {
+    lstat: (path) => fs.lstat(rewrite(path)),
+    realpathNative: (path) => fs.realpathNative(rewrite(path)),
+    readFileUtf8: (path, maxBytes) => fs.readFileUtf8(rewrite(path), maxBytes),
+  };
+}
+
 function classify(
   executablePath: string,
   fs: VirtualWindowsFs,
@@ -237,6 +259,35 @@ describe("classifyWindowsExecutableProfile", () => {
 
     const result = classify(executable.replace(/^C:/, "c:"), fs);
     expect(result).toEqual({ kind: "normal-install", manifestPath: MANIFEST_PATH });
+  });
+
+  test("resolves an 8.3 executable path to the physical profile root", () => {
+    const fs = new VirtualWindowsFs();
+    const canonicalRoot = "C:\\profile-long-name";
+    const aliasRoot = "C:\\PROFIL~1";
+    const executable = addVersionedExecutable(fs, canonicalRoot);
+    fs.addFile(win32Path.join(canonicalRoot, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
+    const aliasedExecutable = executable.replace(canonicalRoot, aliasRoot);
+
+    expect(
+      classifyWindowsExecutableProfile({
+        executablePath: aliasedExecutable,
+        platform: "win32",
+        env: makeEnv(),
+        fs: shortNameAliasFs(fs, aliasRoot, canonicalRoot),
+      }),
+    ).toEqual({ kind: "profile", profileDir: canonicalRoot });
+  });
+
+  test("falls back to USERPROFILE AppData Roaming when APPDATA is absent", () => {
+    const fs = new VirtualWindowsFs();
+    const executable = addVersionedExecutable(fs, "C:\\tools\\kunai");
+    addManifest(fs, { schemaVersion: 2, method: "binary", versionedPath: executable });
+
+    expect(classify(executable, fs, makeEnv({ APPDATA: undefined }))).toEqual({
+      kind: "normal-install",
+      manifestPath: MANIFEST_PATH,
+    });
   });
 
   test("matches a schema-1 versionPath", () => {
