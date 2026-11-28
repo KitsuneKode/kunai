@@ -583,7 +583,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // With the dedicated profile checks, launchers, and review fixes (#860),
 // Bun 1.4.5 measured 3,421,461 bytes: +11,013 over #861.
 // 3342 KiB leaves 747 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_342;
+// Windows executable evidence classification (#864) measured 3,428,609 bytes
+// with Bun 1.4.5 after removing duplicate root-policy validation and reusing
+// the shared JSON boundary guards: +7,148 over #860. The classifier must keep
+// symlink, 8.3, exact-marker, bounded-manifest, and sibling-version evidence in
+// the Windows startup path; no dependency or asset was added. 3349 KiB leaves
+// 767 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_349;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
