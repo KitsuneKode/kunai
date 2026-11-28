@@ -69,11 +69,13 @@ export type TableDelta = {
 /** `table -> {added, removed}` for tables whose contents differ. */
 export type ProfileDelta = Map<string, TableDelta>;
 
+type ConfigObject = Record<string, unknown>;
+
 export interface ProfileInspector {
   history(): HistoryRow[];
   queue(): QueueRow[];
   /** Parsed config.json; `{}` when absent (fresh profile). */
-  config(): Record<string, unknown>;
+  config(): ConfigObject;
   /** `table -> row count` across both databases. */
   tables(): Record<string, number>;
   /** Raw rows of one table (canonical JSON strings), `"data.x"`/`"cache.x"` keyed. */
@@ -114,17 +116,25 @@ function snapshotFile(dbPath: string): DbFileSnapshot {
   return { tables, truncated };
 }
 
+function parseConfigObject(text: string): ConfigObject {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!(parsed instanceof Object) || Array.isArray(parsed)) {
+      // eslint-disable-next-line anti-slop/no-known-value-widening -- the inspector intentionally exposes config.json as open persisted JSON.
+      return { __unreadable: true } satisfies ConfigObject;
+    }
+    // SAFETY: object-narrowed above — the top level of a config file is a record.
+    return parsed as ConfigObject;
+  } catch {
+    // A torn write is a finding, not a crash — report what we could see.
+    // eslint-disable-next-line anti-slop/no-known-value-widening -- corrupt config is reported through the same open persisted-JSON contract.
+    return { __unreadable: true } satisfies ConfigObject;
+  }
+}
+
 function configSnapshotRow(paths: ProfileStoragePaths): string {
   if (!existsSync(paths.configPath)) return "{}";
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(paths.configPath, "utf8"));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return "{\"__unreadable\":true}";
-    }
-    return canonicalRow(parsed);
-  } catch {
-    return "{\"__unreadable\":true}";
-  }
+  return canonicalRow(parseConfigObject(readFileSync(paths.configPath, "utf8")));
 }
 
 export function snapshotProfile(paths: ProfileStoragePaths): ProfileSnapshot {
@@ -188,18 +198,7 @@ export function createProfileInspector(paths: ProfileStoragePaths): ProfileInspe
     },
     config() {
       if (!existsSync(paths.configPath)) return {};
-      try {
-        const parsed: unknown = JSON.parse(readFileSync(paths.configPath, "utf8"));
-        // config.json is always an object; a scalar/array would be corruption.
-        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-          return { __unreadable: true };
-        }
-        // SAFETY: object-narrowed above — the top level of a config file is a record.
-        return parsed as Record<string, unknown>;
-      } catch {
-        // A torn write is a finding, not a crash — report what we could see.
-        return { __unreadable: true };
-      }
+      return parseConfigObject(readFileSync(paths.configPath, "utf8"));
     },
     tables() {
       const snap = snapshotProfile(paths);

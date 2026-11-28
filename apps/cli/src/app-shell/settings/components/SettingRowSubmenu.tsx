@@ -17,16 +17,25 @@ export const SettingRowSubmenu = React.memo(function SettingRowSubmenu({
 }) {
   const plain = plainModeEnabled();
   const prefix = selectionPrefix(selected, plain);
-  const fitted = fitSettingsRowText({ width: rowWidth, prefix, label: row.def.label, value: row.valueSummary, plain });
+  const fitted = fitSettingsRowText({
+    width: rowWidth,
+    prefix,
+    label: row.def.label,
+    value: row.valueSummary,
+    plain,
+  });
   return (
     <Box width={rowWidth} backgroundColor={selected && !plain ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>
-        {prefix}
-      </Text>
+      <Text color={selected ? palette.accent : palette.dim}>{prefix}</Text>
       <Text bold={selected} color={selected ? palette.text : palette.textDim}>
         {fitted.label}
       </Text>
-      {fitted.value ? <Text color={palette.dim}>{fitted.separator}{fitted.value}</Text> : null}
+      {fitted.value ? (
+        <Text color={palette.dim}>
+          {fitted.separator}
+          {fitted.value}
+        </Text>
+      ) : null}
     </Box>
   );
 });

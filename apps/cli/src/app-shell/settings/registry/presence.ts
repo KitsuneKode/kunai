@@ -5,7 +5,6 @@ import { settingsDraftPatch } from "../persist";
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   describeDiscordClientId,
-  describeDiscordOpenUrl,
   PRESENCE_PRIVACY_OPTIONS,
   PRESENCE_PROVIDER_OPTIONS,
 } from "./shared";

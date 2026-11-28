@@ -1,5 +1,11 @@
 import { measureColumns, truncateLine } from "../../shell-text";
 
+export type FittedSettingsRowText = {
+  readonly label: string;
+  readonly separator: string;
+  readonly value: string;
+};
+
 /** Fit label + right-hand state on one terminal row; the label yields first. */
 export function fitSettingsRowText(input: {
   readonly width: number;
@@ -7,7 +13,7 @@ export function fitSettingsRowText(input: {
   readonly label: string;
   readonly value?: string;
   readonly plain: boolean;
-}): { readonly label: string; readonly separator: string; readonly value: string } {
+}): FittedSettingsRowText {
   const value = input.value ?? "";
   const separator = value ? (input.plain ? ": " : " · ") : "";
   const prefixWidth = measureColumns(input.prefix);

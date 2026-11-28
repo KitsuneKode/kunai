@@ -28,13 +28,14 @@ export const SettingRowBoolean = React.memo(function SettingRowBoolean({
 
   return (
     <Box width={rowWidth} backgroundColor={selected && !plain ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>
-        {prefix}
-      </Text>
+      <Text color={selected ? palette.accent : palette.dim}>{prefix}</Text>
       <Text bold={selected} color={selected ? palette.text : palette.textDim}>
         {fitted.label}
       </Text>
-      <Text color={palette.dim}>{fitted.separator}{fitted.value}</Text>
+      <Text color={palette.dim}>
+        {fitted.separator}
+        {fitted.value}
+      </Text>
     </Box>
   );
 });

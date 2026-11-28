@@ -1,22 +1,27 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildSettingsRegistry } from "@/app-shell/settings/registry";
-import type { SettingEffectTiming, SettingRowDef } from "@/app-shell/settings/types";
+import type { SettingRowDef } from "@/app-shell/settings/types";
 import type { Container } from "@/container";
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import { SHIPPED_ANILIST_REDIRECT_URI } from "@/services/sync/auth-contract";
 
 import { collectSourceFiles, readRepoFile } from "../../support/repo-scan";
 
-type RuntimeRegistryRow = {
-  readonly kind: SettingRowDef["kind"];
-  readonly id: string;
-  readonly effectTiming?: SettingEffectTiming;
-  readonly configKeys?: readonly (keyof KitsuneConfig)[];
-};
+type ConfigurableRegistryRow = Extract<
+  SettingRowDef,
+  { readonly kind: "boolean" | "enum" | "text" | "submenu" | "reorder" }
+>;
 
-const CONFIGURABLE_KINDS = new Set(["boolean", "enum", "text", "submenu", "reorder"]);
+function isConfigurableRow(row: SettingRowDef): row is ConfigurableRegistryRow {
+  return (
+    row.kind === "boolean" ||
+    row.kind === "enum" ||
+    row.kind === "text" ||
+    row.kind === "submenu" ||
+    row.kind === "reorder"
+  );
+}
 
 function registryContext() {
   return {
@@ -52,10 +57,8 @@ function registryContext() {
   };
 }
 
-function configurableRows(): RuntimeRegistryRow[] {
-  return (buildSettingsRegistry(registryContext()) as unknown as RuntimeRegistryRow[]).filter(
-    (row) => CONFIGURABLE_KINDS.has(row.kind),
-  );
+function configurableRows(): readonly ConfigurableRegistryRow[] {
+  return buildSettingsRegistry(registryContext()).filter(isConfigurableRow);
 }
 
 /**
@@ -64,7 +67,7 @@ function configurableRows(): RuntimeRegistryRow[] {
  * requires `configKeys`, and the metadata test below fails before inference
  * can hide an omission.
  */
-function inferredConfigKeys(row: RuntimeRegistryRow): readonly string[] {
+function inferredConfigKeys(row: ConfigurableRegistryRow): readonly string[] {
   if (row.configKeys?.length) return row.configKeys;
   if (/^anime(Audio|Subtitle|Quality)$/.test(row.id)) return ["animeLanguageProfile"];
   if (/^series(Audio|Subtitle|Quality)$/.test(row.id)) return ["seriesLanguageProfile"];
@@ -100,12 +103,20 @@ const DYNAMIC_READER_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {}
 // Generic English names need a config-shaped access pattern; a bare word scan
 // for `player`, `provider`, `sync`, or `theme` would pass on unrelated runtime
 // objects even after the real setting reader disappeared.
-const READER_PATTERNS: Readonly<Record<string, RegExp>> = {
-  player: /\b(?:config|rawConfig)\.player\b|\bplayerChoice\b/u,
-  provider: /\b(?:config|rawConfig)\.provider\b|\bproviderForLane\(/u,
-  sync: /\bconfig\.sync\b/u,
-  theme: /\b(?:config|rawConfig|next|before)\.theme\b/u,
-};
+function genericReaderPattern(key: string): RegExp | null {
+  switch (key) {
+    case "player":
+      return /\b(?:config|rawConfig)\.player\b|\bplayerChoice\b/u;
+    case "provider":
+      return /\b(?:config|rawConfig)\.provider\b|\bproviderForLane\(/u;
+    case "sync":
+      return /\bconfig\.sync\b/u;
+    case "theme":
+      return /\b(?:config|rawConfig|next|before)\.theme\b/u;
+    default:
+      return null;
+  }
+}
 
 function productionSources(): readonly { file: string; text: string }[] {
   return collectSourceFiles("apps/cli/src")
@@ -146,7 +157,7 @@ describe("settings live-reader audit", () => {
 
     const sources = productionSources();
     const missing = [...rowsByKey.entries()].flatMap(([key, rowIds]) => {
-      const pattern = READER_PATTERNS[key] ?? new RegExp(`\\b${key}\\b`, "u");
+      const pattern = genericReaderPattern(key) ?? new RegExp(`\\b${key}\\b`, "u");
       const readers = sources.filter(({ text }) => pattern.test(text)).map(({ file }) => file);
       if (readers.length > 0) return [];
       const allowlisted = DYNAMIC_READER_ALLOWLIST[key] ?? [];
