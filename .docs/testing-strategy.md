@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T12:30:00Z"
+lastReviewed: "2026-11-28T12:34:09Z"
 ---
 
 # Kunai — Testing Strategy
@@ -82,7 +82,10 @@ registered around the profile cleanup so it runs after that cleanup: Bun
 invokes preload hooks in registration order and never delivers `exit` or
 `beforeExit` to a preload. The hook lists leftover entries, restores the
 original TMPDIR/TMP/TEMP, then `rmSync`s the scratch (`maxRetries: 5`). Under
-`CI=true` it throws, naming at most 20 relative entries; locally it prints
+`CI=true` the run fails, naming at most 20 relative entries; the scratch hook
+only records the leak and a hook registered last throws it, because Bun skips
+every later preload `afterAll` once one throws and the profile guard must still
+run; locally it prints
 one warning and still removes the directory. Turbo runs package test
 processes in parallel against one machine temp directory, so the check is the
 contents of this process's scratch, not a diff of the shared temp directory.

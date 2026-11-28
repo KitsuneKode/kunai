@@ -222,22 +222,29 @@ export function removeScratchDirectory(directory: string): void {
   rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 }
 
-function cleanupTestScratch(session: TestScratchSession, env: NodeJS.ProcessEnv): void {
+export function cleanupTestScratch(
+  session: TestScratchSession,
+  env: NodeJS.ProcessEnv,
+  io: ScratchDirectoryIo = realScratchIo,
+  warn: (line: string) => void = (line) => {
+    console.warn(line);
+  },
+): void {
   try {
     session.profileCleanup();
   } catch (error) {
     session.failure = error instanceof Error ? error : new Error("Test scratch cleanup failed");
   }
   try {
-    disposeTestScratch(session.directory, session.previous, env, realScratchIo, {
+    disposeTestScratch(session.directory, session.previous, env, io, {
       ci: env.CI === "true",
-      warn: (line) => {
-        console.warn(line);
-      },
+      warn,
     });
   } catch (error) {
+    // Record, never throw here: Bun skips every later preload afterAll once one
+    // throws, and the profile guard registered after this hook must still run.
+    // finishTestScratch's hook, registered last, rethrows the failure.
     session.failure = error instanceof Error ? error : new Error("Test scratch cleanup failed");
-    throw session.failure;
   }
 }
 

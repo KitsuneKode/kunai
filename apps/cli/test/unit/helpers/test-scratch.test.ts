@@ -5,6 +5,7 @@ import {
   POSIX_SCRATCH_PATH_LIMIT,
   applyTempEnv,
   assertScratchPath,
+  cleanupTestScratch,
   createTestScratchDirectory,
   disposeTestScratch,
   hostTempDirectory,
@@ -14,6 +15,7 @@ import {
   snapshotTempEnv,
   type ScratchLeakReport,
   type TempEnvSnapshot,
+  type TestScratchSession,
 } from "../../../../../test/helpers/test-scratch";
 
 const MACOS_TMP = "/var/folders/qb/8nz0spg51dx1z34f56r00000gn/T";
@@ -44,6 +46,28 @@ describe("test scratch guard", () => {
     expect(message).not.toContain("kunai-left-20");
     expect(message).toContain("(+1 more)");
     expect(message).not.toContain("/tmp/");
+  });
+
+  test("the preload hook records a CI leak instead of throwing, so later hooks still run", () => {
+    // Bun skips every later preload afterAll once one throws; the profile
+    // guard is registered after this hook and must not be skipped by a leak.
+    const env: NodeJS.ProcessEnv = { CI: "true", TMPDIR: "/scratch/kt-1-abcd" };
+    const { io, removed } = recordingIo(["kunai-left"], env);
+    let profileCleaned = false;
+    const session: TestScratchSession = {
+      directory: "/scratch/kt-1-abcd",
+      previous: { TMPDIR: "/tmp", TMP: undefined, TEMP: undefined },
+      profileCleanup: () => {
+        profileCleaned = true;
+      },
+      failure: undefined,
+    };
+
+    expect(() => cleanupTestScratch(session, env, io, () => {})).not.toThrow();
+    expect(profileCleaned).toBe(true);
+    expect(removed).toEqual(["/scratch/kt-1-abcd"]);
+    expect(env.TMPDIR).toBe("/tmp");
+    expect(session.failure?.message).toContain("kunai-left");
   });
 
   test("CI throws after the scratch is removed and the previous temp env is back", () => {
