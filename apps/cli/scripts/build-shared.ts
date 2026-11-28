@@ -641,7 +641,12 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // measured 3,449,390 bytes with Bun 1.4.5: +3,013 over 3,446,377. No
 // dependency or asset. 3369 KiB is the smallest whole-KiB budget over that
 // measurement and leaves 466 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_369;
+// The Now Playing GO strip, framed poster tile, and playback header glyphs
+// measured 3,452,906 bytes with Bun 1.4.5: +3,050 over 3,449,856. No
+// dependency or asset; the deck reuses the footer width budget and the
+// details-sheet poster tile. 3372 KiB is the smallest whole-KiB budget over
+// that measurement and leaves 22 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_372;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -32,6 +32,7 @@ import type { StageRailItem } from "./loading-shell-runtime";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
 import { MouseTarget } from "./mouse/MouseRegions";
+import { NowPlayingGoStrip } from "./now-playing-go-strip-ui";
 import { plainModeEnabled, plainStageStatus } from "./plain-mode";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import {
@@ -872,13 +873,11 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
 
-                {narrowPlayback ? null : (
-                  <Box marginTop={1}>
-                    <Text color={palette.muted}>
-                      Tracks and subtitles can also be changed in mpv · ? for all keys
-                    </Text>
-                  </Box>
-                )}
+                <NowPlayingGoStrip
+                  state={state}
+                  width={infoWidth}
+                  canOpenTracks={canOpenSourcePicker}
+                />
 
                 {/* Health/trouble only surfaces when there is something to act on. */}
                 {state.failover ? (

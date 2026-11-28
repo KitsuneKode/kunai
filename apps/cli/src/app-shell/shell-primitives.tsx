@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { companionMode, companionToggleable } from "./companion-policy";
+import { footerRowBudget } from "./footer-width";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { footerKeySequence } from "./mouse/footer-key-sequence";
 import { MouseTarget, usePressKey } from "./mouse/MouseRegions";
@@ -98,7 +99,7 @@ function narrowFooterActions(
   for (const action of nonCommandActions) addCandidate(action);
 
   const nonCommandLimit = Math.max(0, poolLimit - (commandAction ? 1 : 0));
-  const widthBudget = Math.max(18, terminalWidth - 2);
+  const widthBudget = footerRowBudget(terminalWidth);
   const commandColumns = commandAction ? footerActionColumns(commandAction, terminalWidth) : 0;
   const selected: FooterAction[] = [];
   let selectedColumns = 0;

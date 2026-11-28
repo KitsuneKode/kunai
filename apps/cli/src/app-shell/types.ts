@@ -3,9 +3,10 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PlaybackFailoverNotice } from "@/domain/playback/playback-failover-notice";
 import type { PlaybackFailureClass } from "@/domain/playback/playback-failure-class";
 import type { PlaybackProblem } from "@/domain/playback/playback-problem";
+import type { PlayerCapabilities } from "@/domain/playback/player-capabilities";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 import type { ReleaseFilter, WatchFilter } from "@/domain/search/SearchIntent";
-import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, PlaybackTimingMetadata, TitleInfo } from "@/domain/types";
 
 import type { ResolvedAppCommand, AppCommandId } from "./commands";
 
@@ -313,6 +314,10 @@ export type LoadingShellState = {
   footerMode?: ShellFooterMode;
   /** Playbacks that have already shown the on-screen key card; it retires past a few. */
   playbackKeysSessionsSeen?: number;
+  /** Player view the GO strip reads. Absent means managed mpv. */
+  playerCapabilities?: PlayerCapabilities;
+  /** Intro/recap/credits windows for the live `b` chip. */
+  skipTiming?: PlaybackTimingMetadata | null;
 };
 
 export type BrowseIdleContext = {

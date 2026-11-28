@@ -1,27 +1,22 @@
 # post-play.series-complete · wide (140×45)
- DR. STONE                                                                                         │
- S04E07                                                                                            │
-                                                                                                   │
- ✦ SERIES COMPLETE                                                                                 │
- 12 episodes · 4 seasons                                                                           │
-                                                                                                   │
- ▌ Search            find something new to watch [s]                                               │                  ❀
-   Share link        copy a kunai:// link for this title [/share]                                  │
+ DR. STONE                                                                                         │            ╭────────────╮
+ S04E07                                                                                            │            │            │
+                                                                                                   │            │            │
+ ✦ SERIES COMPLETE                                                                                 │            │     D      │
+ 12 episodes · 4 seasons                                                                           │            │            │
+                                                                                                   │            │            │
+ ▌ Search            find something new to watch [s]                                               │            │            │
+   Share link        copy a kunai:// link for this title [/share]                                  │            ╰────────────╯
    Replay            rewatch from the beginning [r]                                                │
+                                                                                                   │  ❀ series
+ ─────────────────────────────────── because you finished this ────────────────────────────────────│  DR. STONE
                                                                                                    │
- ─────────────────────────────────── because you finished this ────────────────────────────────────│
-                                                                                                   │
- ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │  ── up next ──────────────────────
  │                             │  │                             │  │                             │ │
- │              F              │  │             VS              │  │             HD              │ │  ❀ series
- │                             │  │                             │  │                             │ │  DR. STONE
- │ 1                           │  │ 2                           │  │ 3                           │ │
- │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │  ── up next ──────────────────────
+ │              F              │  │             VS              │  │             HD              │ │               E32 · Challengers…
+ │                             │  │                             │  │                             │ │               autoplay
+ │ 1                           │  │ 2                           │  │ 3                           │ │       ❀
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
- └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │               E32 · Challengers…
-                                                                                                   │               autoplay
-                                                                                                   │       ❀
-                                                                                                   │
-                                                                                                   │
-                                                                                                   │
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
                                                                                                    │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%

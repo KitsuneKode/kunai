@@ -1,18 +1,18 @@
 # post-play.movie · wide (140×45)
- DR. STONE                                                                                         │
+ DR. STONE                                                                                         │            ╭────────────╮
+                                                                                                   │            │            │
+ ✓ movie complete                                                                                  │            │            │
+                                                                                                   │            │     D      │
+ ▌ Replay            rewatch from the start [r]                                                    │            │            │
+   Search            find another title [s]                                                        │            │            │
+                                                                                                   │            │            │
+ ──────────────────────────────────── because you watched this ────────────────────────────────────│            ╰────────────╯
                                                                                                    │
- ✓ movie complete                                                                                  │
-                                                                                                   │
- ▌ Replay            rewatch from the start [r]                                                    │
-   Search            find another title [s]                                                        │
-                                                                                                   │                  ❀
- ──────────────────────────────────── because you watched this ────────────────────────────────────│
-                                                                                                   │
- ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
- │                             │  │                             │  │                             │ │
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │  ❀ movie
+ │                             │  │                             │  │                             │ │  DR. STONE
  │              F              │  │             VS              │  │             HD              │ │
  │                             │  │                             │  │                             │ │
  │ 1                           │  │ 2                           │  │ 3                           │ │
- │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │  ❀ movie
- │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │  DR. STONE
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
+ │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
  └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T14:34:58Z"
+lastReviewed: "2026-11-28T16:20:00Z"
 ---
 
 # Kunai — UX Architecture
@@ -629,10 +629,20 @@ authorize pointer activation.
 ## Watching hierarchy and feedback
 
 Now Playing leads with title and episode, real progress, source name and media
-facts. One footer owns the immediate controls: Tracks (`o`), quality (`k`),
-applicable episode navigation, stop and commands. Autoplay/autoskip remain in the
-status and command/help surfaces. Provider selection lives in Tracks and
-`/provider`. Full host/error/retry evidence belongs to diagnostics, not every row.
+facts. The header status is `headerStatusForRoot`: `▸ playing`, `⏸ paused`,
+`◌ buffering`, plus `◌ seeking` and `◌ stalled`. A GO strip under the facts
+lists only shortcuts that work on this screen, read from the player key
+registry: `n`/`p` when another episode exists, `b` when the playhead is inside
+a skippable segment and the player can seek (`autoSkip`), `e` for series and
+anime, `o` when track control can open. Chips that do not fit one row drop
+from the end, using the footer column budget. VLC and any other player without
+`trackControl` gets one line (`Track switches need mpv`) instead of `o`. The
+rail poster is a fixed framed tile — artwork, or the details-sheet initial —
+and terminals under 48 columns drop that tile. One footer owns the immediate
+controls: Tracks (`o`), quality (`k`), applicable episode navigation, stop and
+commands. Autoplay/autoskip remain in the status and command/help surfaces.
+Provider selection lives in Tracks and `/provider`. Full host/error/retry
+evidence belongs to diagnostics, not every row.
 
 Tracks uses a rose band for focus and a checkmark for the applied option. Labels
 and values reserve separate cell budgets; subtitle Off is first. Quality Auto

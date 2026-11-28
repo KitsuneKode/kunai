@@ -1,30 +1,30 @@
 # post-play.mid-series · wide (140×45)
- DR. STONE                                                                                         │
- S04E07                                                                                            │
-                                                                                                   │
- ✓ episode complete                                                                                │
-                                                                                                   │
- ╭────────────────────────────────────────────────────────────────────────────────────────────────╮│
- │ ▶ UP NEXT                                                                                      ││                  ❀
- │                                                                                                ││
+ DR. STONE                                                                                         │            ╭────────────╮
+ S04E07                                                                                            │            │            │
+                                                                                                   │            │            │
+ ✓ episode complete                                                                                │            │     D      │
+                                                                                                   │            │            │
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────╮│            │            │
+ │ ▶ UP NEXT                                                                                      ││            │            │
+ │                                                                                                ││            ╰────────────╯
  │                   E32 · Challengers of Science                                                 ││
- │                   Status available · autoplay on                                               ││
- │        DS         ↵ play · e episodes                                                          ││
+ │                   Status available · autoplay on                                               ││  ❀ series
+ │        DS         ↵ play · e episodes                                                          ││  DR. STONE
  │                                                                                                ││
+ │                                                                                                ││  ── up next ──────────────────────
  │                                                                                                ││
- │                                                                                                ││
- ╰────────────────────────────────────────────────────────────────────────────────────────────────╯│  ❀ series
-                                                                                                   │  DR. STONE
- ▌ Next episode      E32 · Challengers of Science · autoplay on [↵ n]                              │
-   Episodes          open season list, current stays marked [e]                                    │  ── up next ──────────────────────
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────╯│               E32 · Challengers…
+                                                                                                   │               autoplay
+ ▌ Next episode      E32 · Challengers of Science · autoplay on [↵ n]                              │       ❀
+   Episodes          open season list, current stays marked [e]                                    │
    Session           autoskip on · chain continues [a · u · x]                                     │
-   Share link        copy a kunai:// link at the last position [/share]                            │               E32 · Challengers…
-   Replay / Tracks   rewatch, or change source · quality · audio [r · o]                           │               autoplay
-                                                                                                   │       ❀
+   Share link        copy a kunai:// link at the last position [/share]                            │
+   Replay / Tracks   rewatch, or change source · quality · audio [r · o]                           │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%
+                                                                                                   │
  ──────────────────────────────────── because you watched this ────────────────────────────────────│
                                                                                                    │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
- │                             │  │                             │  │                             │ │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%
+ │                             │  │                             │  │                             │ │
  │              F              │  │             VS              │  │             HD              │ │
  │                             │  │                             │  │                             │ │
  │ 1                           │  │ 2                           │  │ 3                           │ │

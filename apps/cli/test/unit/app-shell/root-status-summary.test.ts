@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildRootStatusSummary } from "@/app-shell/root-status-summary";
+import { buildRootStatusSummary, headerStatusForRoot } from "@/app-shell/root-status-summary";
 import { createInitialState } from "@/domain/session/SessionState";
 
 describe("buildRootStatusSummary", () => {
@@ -483,5 +483,31 @@ describe("buildRootStatusSummary", () => {
       playbackIsLocal: true,
     });
     expect(localPlayback.crumb).toContain("↓ offline");
+  });
+});
+
+describe("headerStatusForRoot playback transport", () => {
+  const debounced = { label: "ready", tone: "success" as const };
+
+  test.each([
+    ["playing", "▸ playing", "success"],
+    ["paused", "⏸ paused", "neutral"],
+    ["buffering", "◌ buffering", "warning"],
+    ["seeking", "◌ seeking", "warning"],
+    ["stalled", "◌ stalled", "warning"],
+  ] as const)("%s maps to %s", (status, label, tone) => {
+    expect(headerStatusForRoot(status, debounced)).toEqual({ label, tone });
+  });
+
+  test("browse ready and resolving stay on the existing header words", () => {
+    expect(headerStatusForRoot("ready", debounced)).toEqual(debounced);
+    expect(headerStatusForRoot("resolving", debounced)).toEqual({
+      label: "Resolving…",
+      tone: "warning",
+    });
+    expect(headerStatusForRoot("issue", { label: "ready", tone: "success" })).toEqual({
+      label: "issue",
+      tone: "error",
+    });
   });
 });

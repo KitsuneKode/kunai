@@ -26,7 +26,10 @@ it("L2 shell uses the seeded movie subtitle profile, matching main startup", asy
     s.press("smoke", "\r");
     await s.waitForFrame((frame) => frame.includes("Smoke Movie"), "fixture results");
     s.press("\r");
-    await s.waitForFrame((frame) => frame.includes("Tracks and subtitles"), "playing surface");
+    await s.waitForFrame(
+      (frame) => frame.includes("Now Playing") && frame.includes("subs off"),
+      "playing surface",
+    );
     expect(s.inspect().config().movieLanguageProfile).toMatchObject({ subtitle: "none" });
     expect(s.frame()).toContain("subs off");
   } finally {

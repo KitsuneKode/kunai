@@ -157,6 +157,7 @@ Scores use a 1–5 scale (`Impact` 5 = fixes broken trust/usability on daily pat
 - **Dependencies:** Rank 3 (Palette height), Rank 7 (`ContinueSourcePrompt`).
 
 ### Rank 17 · Now Playing Control Deck Polish (`GO` Strip, Framed Poster Slot & VLC Capability Copy)
+- **Status:** Done.
 - **Impact / Effort:** 3 / 1.5 (**Ratio: 2.0**)
 - **Why:** Live 120×32 capture of Now Playing showed `● ready` instead of `▸ playing`, a floating `❀` in 7 rows of blank rail space, and no scannable `GO` episode-shortcut strip (`n next · p prev · b skip · e episodes · o tracks`).
 - **Files touched:** `apps/cli/src/app-shell/loading-shell.tsx` (`:908-1055`), `apps/cli/src/app-shell/MediaPanel.tsx`, `apps/cli/src/app-shell/ink-shell.tsx` (header status `▸ playing` / `⏸ paused` / `◌ buffering`).

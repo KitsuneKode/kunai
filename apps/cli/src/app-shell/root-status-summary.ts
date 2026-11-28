@@ -61,13 +61,35 @@ export type RootHeaderStatus = {
   readonly tone: ShellStatusTone;
 };
 
+function playbackHeader(rootStatus: string): RootHeaderStatus | null {
+  switch (rootStatus) {
+    case "playing":
+      return { label: "▸ playing", tone: "success" };
+    case "paused":
+      return { label: "⏸ paused", tone: "neutral" };
+    case "buffering":
+      return { label: "◌ buffering", tone: "warning" };
+    case "seeking":
+      return { label: "◌ seeking", tone: "warning" };
+    case "stalled":
+      return { label: "◌ stalled", tone: "warning" };
+    default:
+      return null;
+  }
+}
+
 export function headerStatusForRoot(
   rootStatus: string,
   debounced: RootHeaderStatus,
 ): RootHeaderStatus {
   if (rootStatus === "issue") return { label: "issue", tone: "error" };
   if (rootStatus === "resolving") return { label: "Resolving…", tone: "warning" };
-  return debounced;
+  return playbackHeader(rootStatus) ?? debounced;
+}
+
+/** Plain-mode header drops the transport glyph so the word is the status. */
+export function plainHeaderStatusLabel(label: string): string {
+  return label.replace(/^[▸⏸◌]\s*/u, "");
 }
 
 function humanReadableRootStatus(raw: string): string {

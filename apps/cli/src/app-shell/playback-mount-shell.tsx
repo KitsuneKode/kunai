@@ -275,6 +275,8 @@ export function buildPlaybackRootLoadingShellState(
     currentEpisode: state.currentEpisode?.episode,
     contentKind: resolveContentKind(state.currentTitle, state.mode),
     titleType: state.currentTitle?.type,
+    playerCapabilities: container.player.capabilities,
+    skipTiming: container.playerControl.getActive()?.getTimingSnapshot?.() ?? null,
     videoMeta: state.videoMeta,
     onCommandAction: handlers.onCommandAction,
     paletteTitleSource: () => collectLocalTitleEntries(container),
