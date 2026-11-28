@@ -94,7 +94,7 @@ function stripCommentOnlyLines(text: string): string {
 
 /**
  * Keys whose only production reader is constructed dynamically may be listed
- * here, one entry per reader as `apps/cli/src/path.ts:line`, with a comment
+ * here, one entry per reader as a source-relative `file.ts:line`, with a comment
  * naming the dynamic indirection. There are currently none: every registered
  * key below has a literal production reader.
  */
