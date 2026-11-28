@@ -1,5 +1,9 @@
 import { mapPosterPreviewState } from "@/app-shell/browse-preview-rail";
 import {
+  armDownloadConfirmation,
+  executeDownloadConfirmation,
+} from "@/app-shell/download-confirmation-actions";
+import {
   buildDownloadManagerLayout,
   buildDownloadManagerRailModel,
 } from "@/app-shell/download-manager-view";
@@ -32,10 +36,6 @@ import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
 import { presentMedia } from "@/domain/media/media-presentation";
-import {
-  deleteDownloads,
-  formatDownloadRemovalFeedback,
-} from "@/services/download/download-removal";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -389,42 +389,13 @@ export function DownloadManagerContent({
           const confirmation = confirm.transition({ type: "confirm" });
           const effect = confirmation.effect;
           if (effect) {
-            const job = allJobs.find((candidate) => candidate.id === effect.targetId);
-            if (!job) {
-              confirm.transition({ type: "fail", message: "Download row is no longer visible" });
-            } else if (effect.verb === "abort") {
-              void container.downloadService
-                .abort(job.id)
-                .then(() => {
-                  confirm.transition({ type: "succeed" });
-                  refresh();
-                  return undefined;
-                })
-                .catch((error: unknown) => {
-                  confirm.transition({
-                    type: "fail",
-                    message: error instanceof Error ? error.message : "Unable to abort download",
-                  });
-                });
-            } else {
-              const deleteArtifact = effect.verb === "delete files";
-              void deleteDownloads(container.downloadService, [job.id], deleteArtifact).then(
-                (summary) => {
-                  refresh();
-                  container.stateManager.dispatch({
-                    type: "SET_PLAYBACK_FEEDBACK",
-                    note: formatDownloadRemovalFeedback(summary),
-                  });
-                  const retained = summary.retained[0];
-                  if (retained) {
-                    confirm.transition({ type: "fail", message: retained.reason });
-                  } else {
-                    confirm.transition({ type: "succeed" });
-                  }
-                  return undefined;
-                },
-              );
-            }
+            executeDownloadConfirmation({
+              container,
+              effect,
+              jobs: allJobs,
+              confirm,
+              refresh,
+            });
           }
           return;
         }
@@ -478,25 +449,11 @@ export function DownloadManagerContent({
       if (input === "x" || input === "X" || key.delete) {
         const job = allJobs[selectedIndex];
         if (!job) return;
-        const deleteArtifact =
-          input !== "X" &&
-          (job.status === "repairable" ||
-            job.status === "completed" ||
-            job.status === "completed-with-notes");
-        const verb =
-          job.status === "running" ? "abort" : deleteArtifact ? "delete files" : "remove record";
-        confirm.transition({
-          type: "arm",
-          targetId: job.id,
-          label: job.titleName,
-          verb,
-          executingLabel:
-            verb === "abort"
-              ? `Aborting ${job.titleName}`
-              : verb === "delete files"
-                ? `Deleting local files for ${job.titleName}`
-                : `Removing ${job.titleName} from Downloads`,
+        armDownloadConfirmation({
+          job,
+          forceRecordOnly: input === "X",
           visibleIds: allJobs.map((candidate) => candidate.id),
+          confirm,
         });
         return;
       }

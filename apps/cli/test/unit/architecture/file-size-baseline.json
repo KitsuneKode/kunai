@@ -1,11 +1,11 @@
 {
   "apps/cli/src/app-shell/browse-shell.tsx": 2710,
-  "apps/cli/src/app-shell/ink-shell.tsx": 2437,
+  "apps/cli/src/app-shell/ink-shell.tsx": 1965,
   "apps/cli/src/app-shell/keybindings.ts": 1265,
   "apps/cli/src/app-shell/loading-shell.tsx": 1059,
   "apps/cli/src/app-shell/panel-data.ts": 836,
   "apps/cli/src/app-shell/post-play-view.ts": 987,
-  "apps/cli/src/app-shell/root-overlay-shell.tsx": 2605,
+  "apps/cli/src/app-shell/root-overlay-shell.tsx": 2526,
   "apps/cli/src/app-shell/setup-shell.tsx": 859,
   "apps/cli/src/app-shell/workflows/shell-workflows.ts": 2830,
   "apps/cli/src/app/playback/playback-stream-acquire.ts": 884,

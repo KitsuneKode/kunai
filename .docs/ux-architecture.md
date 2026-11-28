@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T11:41:06Z"
+lastReviewed: "2026-11-28T13:31:24Z"
 ---
 
 # Kunai — UX Architecture
@@ -99,6 +99,23 @@ query. This applies to Browse and the shared picker/post-play input hook.
 - prefer explicit leader mode over hidden timed key chords
 - if an action is unavailable, show why instead of silently ignoring the input
 - mode actions should be phrased by destination, like `Anime mode` or `Series mode`, instead of generic toggle wording
+
+### Destructive confirmations
+
+All destructive row or collection actions use `ConfirmStrip` and the shared
+`resolveEscStack` ladder. Arming never mutates; `y` is the only keyboard
+confirmation, while `Esc` cancels the strip before filters, pickers, panes, or
+the overlay itself. While armed, the footer is reduced to `[y] <verb>` and
+`[esc] cancel`; executing ignores input; failures keep the message visible until
+`Esc` dismisses it. Targets are stable row IDs and are reconciled when the row
+list changes, so moving the selection or reordering a list disarms the strip
+instead of deleting the wrong row.
+
+History, Library, Downloads, Up Next, and destructive list-picker actions share
+this model. In type-to-filter lists, printable letters remain filter text while
+a query is present; History therefore uses the non-printing Delete key to arm a
+confirmation in that state rather than turning the letter `x` inside a title
+into a destructive action.
 
 ### Optional terminal mouse input
 
@@ -434,7 +451,7 @@ get no decorative animation.
 
 - filterable pickers are the default for season, episode, provider, subtitle, history, and settings flows
 - picker filtering should keep terminal-style editing semantics where practical
-- if a picker filter is non-empty, the first `Esc` clears the filter and the second `Esc` closes the picker
+- if a picker filter is non-empty, the first `Esc` clears the filter and the second `Esc` closes the picker — unless a destructive confirmation is armed, because confirmation cancellation is always higher priority
 - picker states should keep a compact local title strip with:
   - task title, like `Choose episode`
   - one short context line, like `Season 2 · 12 episodes`
