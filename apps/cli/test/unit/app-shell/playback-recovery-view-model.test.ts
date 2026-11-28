@@ -36,7 +36,7 @@ describe("buildPlaybackRecoveryViewModel", () => {
     const model = buildPlaybackRecoveryViewModel(
       baseState({
         operation: "loading",
-        latestIssue: "Playback did not start",
+        failureClass: "player-exited",
         hasNextEpisode: true,
       }),
     );
@@ -83,7 +83,14 @@ describe("buildPlaybackRecoveryViewModel", () => {
     const model = buildPlaybackRecoveryViewModel(
       baseState({
         operation: "resolving",
-        latestIssue: "No source available",
+        problem: {
+          stage: "provider-resolve",
+          severity: "blocking",
+          cause: "no-stream",
+          userMessage: "No playable stream was found for this episode.",
+          recommendedAction: "pick-stream",
+          secondaryActions: ["diagnostics"],
+        },
         hasNextEpisode: true,
       }),
     );
@@ -98,5 +105,61 @@ describe("buildPlaybackRecoveryViewModel", () => {
 
   test("healthy playback returns null", () => {
     expect(buildPlaybackRecoveryViewModel(baseState({ bufferHealth: "healthy" }))).toBeNull();
+  });
+
+  test("a structured player failure class picks the copy without reading the issue sentence", () => {
+    const model = buildPlaybackRecoveryViewModel(
+      baseState({
+        operation: "loading",
+        failureClass: "ipc-stuck",
+        latestIssue: "Recoverable provider failures retry before fallback.",
+        hasNextEpisode: true,
+      }),
+    );
+    expect(model?.state.kind).toBe("error");
+    expect(model?.state.title).toBe("Stream stalled");
+    expect(model?.actions.map((action) => action.id)).toEqual([
+      "recover",
+      "sources",
+      "diagnostics",
+    ]);
+    expect(model?.actions.some((action) => action.id === "next")).toBe(false);
+  });
+
+  test("player exit is playback did not start, not a substring of the note", () => {
+    const model = buildPlaybackRecoveryViewModel(
+      baseState({
+        operation: "loading",
+        failureClass: "player-exited",
+        latestIssue: "Launching player",
+        hasNextEpisode: true,
+      }),
+    );
+    expect(model?.state.title).toBe("Playback did not start");
+    expect(model?.actions.some((action) => action.id === "next")).toBe(false);
+  });
+
+  test("a no-stream problem is no playable source without matching English", () => {
+    const model = buildPlaybackRecoveryViewModel(
+      baseState({
+        operation: "resolving",
+        latestIssue: "Recoverable provider failures retry before fallback.",
+        problem: {
+          stage: "provider-resolve",
+          severity: "blocking",
+          cause: "no-stream",
+          userMessage: "No playable stream was found for this episode.",
+          recommendedAction: "pick-stream",
+          secondaryActions: ["try-next-provider"],
+        },
+        hasNextEpisode: true,
+      }),
+    );
+    expect(model?.state.title).toBe("No playable source found");
+    expect(model?.actions.map((action) => action.id)).toEqual([
+      "recover",
+      "sources",
+      "diagnostics",
+    ]);
   });
 });

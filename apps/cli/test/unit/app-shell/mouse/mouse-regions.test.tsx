@@ -848,7 +848,7 @@ describe("footer feedback and ownership regressions", () => {
             state={{
               title: "Test",
               operation: "resolving",
-              latestIssue: "no source",
+              failureClass: "unknown",
               commands: [command],
               onCommandAction: (a) => calls.push(a),
             }}
