@@ -96,6 +96,23 @@ describe("Stremio addon settings", () => {
     expect(add.summarize?.(next)).toBe("1 installed");
   });
 
+  test("an installed addon removal declares every provider reference it clears", () => {
+    const config = { ...ENABLED_CONFIG, stremioAddons: [{ url: A, name: "Alpha" }] };
+    const removal = row(
+      addonSettingsRows(ctxFor(config)),
+      `stremioAddon:${idOf(A)}`,
+      "boolean",
+    );
+
+    expect(removal.configKeys).toEqual([
+      "stremioAddons",
+      "provider",
+      "providerPriority",
+      "disabledProviders",
+      "titleProviderPreferences",
+    ]);
+  });
+
   test("an empty entry, as sent when the input is cancelled, changes nothing", () => {
     const add = row(addonSettingsRows(ctxFor(ENABLED_CONFIG)), "stremioAddonAdd", "text");
 

@@ -68,7 +68,7 @@ export function privacySettingsRows(ctx: SettingsRegistryContext): SettingRowDef
       kind: "boolean",
       id: "usageAnalytics",
       effectTiming: "immediate",
-      configKeys: ["analytics"],
+      configKeys: ["analytics", "installId", "analyticsCohort"],
       label: "Usage analytics",
       detail: analyticsSettingDetail(ctx.config),
       read: (config) => config.analytics === "enabled",

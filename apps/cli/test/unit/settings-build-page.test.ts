@@ -90,6 +90,26 @@ test("editable config metadata is represented by registry rows", () => {
   expect(missing).toEqual([]);
 });
 
+test("compound-write rows declare every config key they write", () => {
+  const rows = buildSettingsRegistry(mockCtx());
+  const byId = new Map(rows.map((row) => [row.id, row]));
+
+  expect(byId.get("usageAnalytics")?.configKeys).toEqual([
+    "analytics",
+    "installId",
+    "analyticsCohort",
+  ]);
+  expect(byId.get("providerPriority")?.configKeys).toEqual(["provider", "providerPriority"]);
+  expect(byId.get("animeProviderPriority")?.configKeys).toEqual([
+    "animeProvider",
+    "animeProviderPriority",
+  ]);
+  expect(byId.get("youtubeProviderPriority")?.configKeys).toEqual([
+    "youtubeProvider",
+    "youtubeProviderPriority",
+  ]);
+});
+
 test("registry organizes into five sections and every registered setting appears in exactly one section", () => {
   const ctx = mockCtx({
     config: {
