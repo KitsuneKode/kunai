@@ -652,7 +652,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // pickers/list-shell.tsx, measured 3,459,450 bytes with Bun 1.4.5: +10,060
 // over 3,449,390. No dependency or asset. 3379 KiB is the smallest whole-KiB
 // budget over that measurement and leaves 646 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_379;
+// The Esc-stack review fixes (plain confirm key, unique armed-row submit,
+// history deletion, and focused-filter Escape) measured 3,461,043 bytes with
+// Bun 1.4.5: +1,593 over 3,459,450. No dependency or asset. 3380 KiB is the
+// smallest whole-KiB budget over that measurement and leaves 77 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_380;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
