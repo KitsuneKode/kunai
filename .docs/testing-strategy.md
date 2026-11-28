@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T12:45:30Z"
+lastReviewed: "2026-11-28T12:50:38Z"
 ---
 
 # Kunai — Testing Strategy
@@ -91,8 +91,9 @@ processes in parallel against one machine temp directory, so the check is the
 contents of this process's scratch, not a diff of the shared temp directory.
 Each test still removes the directories it creates (`finally` / `afterEach`);
 the scratch is the backstop, including when `fs.promises.rm` resolves while
-the directory is still there. Bun's own `node-compile-cache` directory is the
-runtime, not a fixture, and is not reported. An empty `kunai-ipc` is not
+the directory is still there. Runtime caches are not fixtures and are not
+reported: Bun's `node-compile-cache`, and `.dotnet` from the .NET runtime behind
+`pwsh` in the installer integration tests. An empty `kunai-ipc` is not
 reported either: it is the owner-only mpv socket directory production keeps
 under the temp root when `XDG_RUNTIME_DIR` is unset (macOS), but a socket left
 inside it is, as `kunai-ipc/<name>`.

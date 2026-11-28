@@ -25,10 +25,12 @@ const SCRATCH_ATTEMPTS = 8;
 export const MAX_LISTED_LEFTOVERS = 20;
 
 /**
- * Bun writes this under `os.tmpdir()` while it loads test modules. It is the
- * runtime's compile cache, not a fixture a test created.
+ * Runtimes write these under `os.tmpdir()`; they are not fixtures a test
+ * created. `node-compile-cache` is Bun's compile cache while it loads test
+ * modules. `.dotnet` is the .NET runtime behind `pwsh`, which the installer
+ * integration tests spawn (seen on the macOS runner).
  */
-const RUNTIME_SCRATCH_ENTRIES: ReadonlySet<string> = new Set(["node-compile-cache"]);
+const RUNTIME_SCRATCH_ENTRIES: ReadonlySet<string> = new Set(["node-compile-cache", ".dotnet"]);
 
 /**
  * Directories production deliberately keeps under the temp root across runs.

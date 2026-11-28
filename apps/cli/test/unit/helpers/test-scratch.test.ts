@@ -75,6 +75,8 @@ describe("test scratch guard", () => {
     // macOS has no XDG_RUNTIME_DIR, so mpv sockets live in $TMPDIR/kunai-ipc,
     // a directory production keeps on purpose.
     expect(testScratchLeftovers(["kunai-ipc"], () => [])).toEqual([]);
+    // pwsh's .NET runtime cache is not a test leak either.
+    expect(testScratchLeftovers([".dotnet", "node-compile-cache"])).toEqual([]);
     expect(testScratchLeftovers(["kunai-ipc", "kunai-x"], () => ["kunai-mpv-0123.sock"])).toEqual([
       "kunai-ipc/kunai-mpv-0123.sock",
       "kunai-x",
