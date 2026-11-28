@@ -376,6 +376,21 @@ export function handleHistoryOverlayInput(
     }
   }
 
+  // Delete is not filter text, so it can arm the same episode confirmation even
+  // while a query is present; printable x stays text in that state.
+  if (selected && key.delete) {
+    ctx.transitionConfirm({
+      type: "arm",
+      targetId: `episode:${selected.entry.key}`,
+      label: historyDeleteLabel(selected.entry),
+      verb: "delete",
+      executingLabel: `Removing episode progress for ${historyDeleteLabel(selected.entry)}`,
+      visibleIds: ctx.confirmationVisibleIds,
+    });
+    ctx.setOverlayStatus(null);
+    return "handled";
+  }
+
   // While a filter is in progress every printable key is text: "demon" used to
   // open the title menu at `m`, "spy x" armed a delete at `x`.
   const filterRoute = routeListFilterKey(input, key, {

@@ -235,43 +235,118 @@ describe("agent wiring · settings toggle", () => {
   }, 30_000);
 });
 
-describe("agent wiring · queue", () => {
-  it("q enqueues the highlighted result; x removes it in Up Next", async () => {
-    await withSession("wiring-queue", {}, async (s) => {
-      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
-
-      s.press("movie", K.enter);
-      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
-
-      // `q` on the highlighted row — advertised as "up next" in the footer.
-      const before = s.inspect().queue().length;
-      s.press("q");
-      await s.waitForBackend((i) => i.queue().length === before + 1, "playlist_queue +1 after q");
-      const queued = s.inspect().queue();
-      expect(queued.at(-1)?.title_id).toBe("tmdb:smoke-movie-1");
-
-      // `Q` opens Up Next; `x` removes the selected row — reverse state. The
-      // predicate must name the overlay uniquely: "Smoke Movie" also appears
-      // on the results frame, which let the wait resolve before the overlay's
-      // input handler attached — x then dropped into the gap and removed
-      // nothing. waitSettled is the human beat between seeing the panel and
-      // pressing a key on it.
-      s.press("Q");
-      await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
-      await s.waitSettled();
-      // `x` arms on first press (prompt names the row in the footer) and
-      // removes on the second — single-press removal would be one key away
-      // from an accident next to Ctrl+C.
-      s.press("x");
-      await s.waitForFrame((f) => f.includes("Press x again"), "remove confirm prompt");
-      await s.waitSettled();
-      s.press("x");
-      await s.waitForBackend(
-        (i) => i.queue().length === before,
-        "playlist_queue back to baseline after x",
-      );
+describe("agent wiring · destructive confirmations", () => {
+  function seedHistoryRows({ container }: { readonly container: Container }): void {
+    const base = {
+      episode: { season: 1, episode: 2 },
+      positionSeconds: 120,
+      durationSeconds: 1200,
+      completed: false,
+      providerId: "videasy",
+    };
+    container.historyRepository.upsertProgress({
+      title: { id: "tmdb:fleetest-one", kind: "series", title: "Fleetest One" },
+      ...base,
+      updatedAt: "2026-11-20T10:00:00.000Z",
     });
-  }, 30_000);
+    container.historyRepository.upsertProgress({
+      title: { id: "tmdb:fleetest-two", kind: "series", title: "Fleetest Two" },
+      ...base,
+      updatedAt: "2026-11-21T10:00:00.000Z",
+    });
+  }
+
+  for (const [columns, rows] of [
+    [120, 32],
+    [54, 25],
+    [40, 20],
+  ] as const) {
+    it(`History and Up Next arm, cancel, keep filters, and disarm on movement at ${columns}x${rows}`, async () => {
+      await withSession(
+        `wiring-confirm-strip-${columns}x${rows}`,
+        { columns, rows, beforeMount: seedHistoryRows },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+
+          // Up Next: x arms, never deletes; Escape cancels the strip and keeps
+          // the overlay open; y is the only confirming key.
+          s.press("movie", K.enter);
+          await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+          const queueBaseline = s.inspect().queue().length;
+          s.press("q");
+          await s.waitForBackend(
+            (i) => i.queue().length === queueBaseline + 1,
+            "playlist_queue +1 after q",
+          );
+          s.press("Q");
+          await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
+          await s.waitSettled();
+          s.press("x");
+          await s.waitForFrame(
+            (f) => f.includes("[y] remove") && f.includes("[esc] cancel"),
+            "up-next confirm footer",
+          );
+          expect(s.frame()).not.toContain("[enter] play");
+          s.press(K.esc);
+          await s.waitForFrame(
+            (f) => f.includes("UP NEXT") && f.includes("Smoke") && !f.includes("[y] remove"),
+            "Escape disarms while Up Next stays open",
+          );
+          expect(s.inspect().queue()).toHaveLength(queueBaseline + 1);
+          s.press("x");
+          await s.waitForFrame((f) => f.includes("[y] remove"), "up-next re-armed");
+          await s.waitSettled();
+          s.press("y");
+          await s.waitForBackend(
+            (i) => i.queue().length === queueBaseline,
+            "playlist_queue back to baseline after y",
+          );
+          s.press(K.esc);
+          await s.waitForFrame((f) => !f.includes("UP NEXT"), "queue closed");
+
+          // History: the armed strip owns the footer, Escape cancels it before
+          // the typed filter, and moving the selection disarms without deleting.
+          s.press(SETTINGS_KEY);
+          await s.waitForFrame((f) => f.includes("command"), "command palette");
+          s.press("history", K.enter);
+          await s.waitForFrame((f) => f.includes("Fleete"), "history overlay rows");
+          await s.waitSettled();
+          const historyBaseline = s.inspect().history().length;
+          s.press("x");
+          await s.waitForFrame(
+            (f) => f.includes("[y] delete") && f.includes("[esc] cancel"),
+            "history confirm footer",
+          );
+          expect(s.frame()).not.toContain("[enter] resume");
+          s.press(K.esc);
+          await s.waitForFrame(
+            (f) => f.includes("History") && f.includes("Fleete") && !f.includes("[y] delete"),
+            "Escape disarms while History stays open",
+          );
+          expect(s.inspect().history()).toHaveLength(historyBaseline);
+
+          s.press("ee");
+          await s.waitForFrame((f) => f.includes("Filter: ee"), "history filter typed");
+          s.press(K.delete);
+          await s.waitForFrame((f) => f.includes("[y] delete"), "confirm armed over filter");
+          s.press(K.esc);
+          await s.waitForFrame(
+            (f) => f.includes("Filter: ee") && !f.includes("[y] delete"),
+            "Escape cancels confirmation before clearing filter",
+          );
+
+          s.press(K.delete);
+          await s.waitForFrame((f) => f.includes("[y] delete"), "confirm re-armed");
+          s.press(K.down);
+          await s.waitForFrame(
+            (f) => !f.includes("[y] delete"),
+            "moving the selection disarms the confirmation",
+          );
+          expect(s.inspect().history()).toHaveLength(historyBaseline);
+        },
+      );
+    }, 60_000);
+  }
 });
 
 describe("agent wiring · session undo", () => {
@@ -326,12 +401,12 @@ describe("agent wiring · session undo", () => {
       s.press("Q");
       await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
       await s.waitSettled();
-      // Destructive remove is two-press: first x arms the row-keyed confirm,
-      // the second executes and is what the undo journal must capture.
+      // Destructive remove is explicit: x arms the row-keyed strip and y is
+      // what the undo journal must capture.
       s.press("x");
-      await s.waitForFrame((f) => f.includes("again to remove"), "remove armed");
-      s.press("x");
-      await s.waitForBackend((i) => i.queue().length === 0, "x removed the row");
+      await s.waitForFrame((f) => f.includes("[y] remove"), "remove armed");
+      s.press("y");
+      await s.waitForBackend((i) => i.queue().length === 0, "y removed the row");
 
       s.press("z");
       await s.waitForBackend(

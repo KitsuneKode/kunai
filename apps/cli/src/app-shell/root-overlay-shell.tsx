@@ -1,7 +1,7 @@
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import { confirmHistoryOverlaySelection } from "@/app-shell/history-selection-launch";
 import { useLineEditor } from "@/app-shell/line-editor";
-import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
+import { buildQueueRestoreDeps } from "@/app-shell/queue-restore";
 import { forceCloseRootContent, getRootContentSession } from "@/app-shell/root-content-state";
 import {
   applyMediaItemSessionRouting,
@@ -251,6 +251,7 @@ import {
   handleNotificationsOverlayInput,
   type NotificationsOverlayState,
 } from "./use-notifications-overlay-input";
+import { handleQueueOverlayInput } from "./use-queue-overlay-input";
 import { useShellDimensions } from "./use-viewport-policy";
 
 export { buildHelpTabRows, HELP_TABS, helpTabRows, HelpShell } from "./help-shell";
@@ -1081,12 +1082,14 @@ export function RootOverlayShell({
     if (overlay.type !== "history") return;
     setSelectedIndex(0);
     transitionHistoryConfirm({ type: "cancel" });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- changing tab is the deliberate reset trigger
   }, [historyTab, overlay.type, transitionHistoryConfirm]);
 
   // An armed queue destroy must not survive leaving the queue: without this,
   // returning later and pressing the same key once would mutate.
   useEffect(() => {
     transitionQueueConfirm({ type: "cancel" });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- leaving the queue is the deliberate reset trigger
   }, [overlay.type, transitionQueueConfirm]);
 
   // Discard any play-now intent left staged by an earlier inbox session.
@@ -1712,200 +1715,21 @@ export function RootOverlayShell({
       }
     }
     if (overlay.type === "queue") {
-      // Handle queue management keys; let arrows / filtering fall through to the
-      // generic choice handlers below (queue is in the optionCount switch).
-      const queueRows = queueView.rows;
-      const refresh = () => setQueueTick((tick) => tick + 1);
-      const sel = queueRows.length === 0 ? -1 : Math.min(selectedIndex, queueRows.length - 1);
-      const row = sel >= 0 ? queueRows[sel] : undefined;
-      const executeQueueConfirmation = (effect: {
-        readonly targetId: string;
-        readonly label: string;
-      }) => {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        try {
-          if (effect.targetId.startsWith("remove:")) {
-            const id = effect.targetId.slice("remove:".length);
-            if (!container.queueService.getAll().some((entry) => entry.id === id)) {
-              throw new Error("Queue item is already gone");
-            }
-            container.queueService.remove(id);
-            container.sessionUndo?.recordQueueChange(
-              "removed from queue",
-              "queue remove",
-              undoBefore ?? [],
-            );
-            setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
-            setOverlayStatus(`Removed ${effect.label} from Up Next`);
-          } else if (effect.targetId === "clear-played") {
-            const playedCount = queueRows.filter(
-              (candidate) => candidate.state === "played",
-            ).length;
-            container.queueService.clearPlayed();
-            container.sessionUndo?.recordQueueChange(
-              "cleared played items",
-              "played clear",
-              undoBefore ?? [],
-            );
-            setSelectedIndex(0);
-            setOverlayStatus(
-              `Cleared ${playedCount} played ${playedCount === 1 ? "item" : "items"}`,
-            );
-          } else {
-            const cleared = queueRows.length;
-            container.queueService.clear();
-            container.sessionUndo?.recordQueueChange(
-              "cleared queue",
-              "queue clear",
-              undoBefore ?? [],
-            );
-            setSelectedIndex(0);
-            setOverlayStatus(`Cleared ${cleared} ${cleared === 1 ? "item" : "items"} from Up Next`);
-          }
-          queueConfirm.transition({ type: "succeed" });
-          refresh();
-        } catch (error) {
-          queueConfirm.transition({
-            type: "fail",
-            message: error instanceof Error ? error.message : "Unable to update Up Next",
-          });
-        }
-      };
-      if (queueConfirm.state.kind !== "idle") {
-        if (queueConfirm.state.kind === "executing") return;
-        if (queueConfirm.state.kind === "armed" && input.toLowerCase() === "y") {
-          const confirmation = queueConfirm.transition({ type: "confirm" });
-          if (confirmation.effect) executeQueueConfirmation(confirmation.effect);
-          return;
-        }
-        if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow || key.tab) {
-          queueConfirm.transition({ type: "cancel" });
-        }
+      if (
+        handleQueueOverlayInput(input, key, {
+          container,
+          rows: queueView.rows,
+          selectedIndex,
+          setSelectedIndex,
+          setOverlayStatus,
+          refresh: () => setQueueTick((tick) => tick + 1),
+          confirm: queueConfirm,
+          confirmationVisibleIds: queueConfirmationVisibleIds,
+          activateRow: activateQueueRow,
+        }) === "handled"
+      ) {
         return;
       }
-      if (key.return && row) {
-        activateQueueRow(row);
-        return;
-      }
-      if (input === "J" && row) {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        queueConfirm.transition({ type: "cancel" });
-        if (container.queueService.moveDown(row.id))
-          setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
-        container.sessionUndo?.recordQueueChange(
-          "reordered queue",
-          "queue reorder",
-          undoBefore ?? [],
-        );
-        refresh();
-        return;
-      }
-      if (input === "K" && row) {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        queueConfirm.transition({ type: "cancel" });
-        if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
-        container.sessionUndo?.recordQueueChange(
-          "reordered queue",
-          "queue reorder",
-          undoBefore ?? [],
-        );
-        refresh();
-        return;
-      }
-      if (input === "g" && row) {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        queueConfirm.transition({ type: "cancel" });
-        container.queueService.moveToTop(row.id);
-        container.sessionUndo?.recordQueueChange(
-          "reordered queue",
-          "queue reorder",
-          undoBefore ?? [],
-        );
-        refresh();
-        return;
-      }
-      if (input === "G" && row) {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        queueConfirm.transition({ type: "cancel" });
-        container.queueService.moveToBottom(row.id);
-        container.sessionUndo?.recordQueueChange(
-          "reordered queue",
-          "queue reorder",
-          undoBefore ?? [],
-        );
-        refresh();
-        return;
-      }
-      if (input.toLowerCase() === "x" && row) {
-        queueConfirm.transition({
-          type: "arm",
-          targetId: `remove:${row.id}`,
-          label: row.title,
-          verb: "remove",
-          executingLabel: `Removing ${row.title} from Up Next`,
-          visibleIds: queueConfirmationVisibleIds,
-        });
-        return;
-      }
-      if (input === "C") {
-        const playedCount = queueRows.filter((candidate) => candidate.state === "played").length;
-        if (playedCount === 0) {
-          queueConfirm.transition({ type: "cancel" });
-          setOverlayStatus("No played items to clear");
-          return;
-        }
-        queueConfirm.transition({
-          type: "arm",
-          targetId: "clear-played",
-          label: `${playedCount} played ${playedCount === 1 ? "item" : "items"}`,
-          verb: "clear",
-          executingLabel: "Clearing played items",
-          visibleIds: queueConfirmationVisibleIds,
-        });
-        return;
-      }
-      if (input === "c" && !key.ctrl) {
-        if (queueRows.length === 0) {
-          queueConfirm.transition({ type: "cancel" });
-          setOverlayStatus("Up Next is already empty");
-          return;
-        }
-        queueConfirm.transition({
-          type: "arm",
-          targetId: "clear-all",
-          label: `all ${queueRows.length} ${queueRows.length === 1 ? "item" : "items"}`,
-          verb: "clear",
-          executingLabel: "Clearing Up Next",
-          visibleIds: queueConfirmationVisibleIds,
-        });
-        return;
-      }
-      // `z` undoes the latest journal entry while one is live; with nothing to
-      // undo it falls through to the choice-overlay filter like any letter.
-      if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
-        container.sessionUndo?.undoLatest();
-        refresh();
-        return;
-      }
-      if (input.toLowerCase() === "r") {
-        queueConfirm.transition({ type: "cancel" });
-        const sessions = container.queueService.listRecoverableSessions();
-        // Sessions come back most-recent-first; naming the target in the status
-        // line is what makes this restore explicit rather than a silent guess.
-        const session = sessions[0];
-        if (!session) {
-          setOverlayStatus("No recoverable queue to restore");
-          return;
-        }
-        const restored = restoreQueueSessionWithResume(
-          buildQueueRestoreDeps(container),
-          session.id,
-        );
-        setOverlayStatus(buildQueueRestoreStatus(restored, sessions.length));
-        refresh();
-        return;
-      }
-      // No early return — arrows + filtering fall through.
     }
     if (
       overlay.type === "notifications" &&
