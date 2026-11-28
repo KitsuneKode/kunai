@@ -70,11 +70,16 @@ export async function loadProductionProviderModules(
     { vidrockProviderModule },
     { rivestreamProviderModule },
     { movyProviderModule },
+    { vidboltProviderModule },
+    { filesunProviderModule },
     { allmangaProviderModule },
     { hianimeProviderModule },
     { animeggProviderModule },
     { kickassanimeProviderModule },
     { miruroProviderModule },
+    { anilightProviderModule },
+    { anidapProviderModule },
+    { animeparadiseProviderModule },
     { youtubeProviderModule },
   ] = await Promise.all([
     import("@kunai/providers/videasy"),
@@ -82,11 +87,16 @@ export async function loadProductionProviderModules(
     import("@kunai/providers/vidrock"),
     import("@kunai/providers/rivestream"),
     import("@kunai/providers/movy"),
+    import("@kunai/providers/vidbolt"),
+    import("@kunai/providers/filesun"),
     import("@kunai/providers/allmanga"),
     import("@kunai/providers/hianime"),
     import("@kunai/providers/animegg"),
     import("@kunai/providers/kickassanime"),
     import("@kunai/providers/miruro"),
+    import("@kunai/providers/anilight"),
+    import("@kunai/providers/anidap"),
+    import("@kunai/providers/animeparadise"),
     import("@kunai/providers/youtube"),
   ]);
 
@@ -97,11 +107,18 @@ export async function loadProductionProviderModules(
       vidrockProviderModule,
       rivestreamProviderModule,
       movyProviderModule,
-      allmangaProviderModule,
+      vidboltProviderModule,
+      filesunProviderModule,
       hianimeProviderModule,
       miruroProviderModule,
       animeggProviderModule,
       kickassanimeProviderModule,
+      anilightProviderModule,
+      anidapProviderModule,
+      animeparadiseProviderModule,
+      // Registered, and last in the default anime order (revision 12). Stream
+      // resolution is CAPTCHA-blocked; the priority list is what places it.
+      allmangaProviderModule,
       youtubeProviderModule,
       // After the bundled providers: an addon the user has not placed in their
       // provider order is a fallback, never the default.

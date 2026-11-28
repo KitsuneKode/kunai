@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { SetupShell, type SetupPrefs } from "@/app-shell/setup-shell";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
@@ -11,6 +12,8 @@ import { renderWithPointer } from "../../support/pointer-render";
 const ready: CapabilitySnapshot = {
   mpv: true,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -21,6 +24,7 @@ const ready: CapabilitySnapshot = {
     available: false,
     reason: "fixture",
   },
+  mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
   issues: [],
 };
 

@@ -113,7 +113,7 @@ describe("profile guard", () => {
 
   test("resolves the profile roots from the environment it is given", () => {
     const roots = realProfileRoots(storageRootEnv(dir));
-    // Linux collapses config, data and cache into one directory when every XDG variable is the same.
+    // The profile root contributes its config, data and cache siblings.
     expect(roots.length).toBeGreaterThanOrEqual(1);
     for (const root of roots) expect(root.startsWith(dir)).toBe(true);
   });

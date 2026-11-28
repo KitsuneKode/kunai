@@ -52,6 +52,7 @@ import {
   parseBrowseFilterQuery,
   processBrowseSearchResults,
 } from "./browse-filters";
+import * as firstRun from "./browse-first-run-ui";
 import {
   browseFocusZoneReducer,
   createInitialBrowseFocusZone,
@@ -195,14 +196,6 @@ function browseIdleHint(mode: ShellMode): string {
   return "Search for a title — or try /trending to see what's popular";
 }
 
-function browseEmptyDetail(mode: ShellMode, message: string): string | undefined {
-  if (!message.includes("trending")) return undefined;
-  if (mode === "youtube") {
-    return "Use type:playlist|video|channel to narrow · /filters for guided facets";
-  }
-  return "Use year:2022 or mode:anime to narrow · /filters for guided facets";
-}
-
 function browseFilterPlaceholder(mode: ShellMode): string {
   if (mode === "youtube") return "type channel, playlist, video, downloaded…";
   if (mode === "anime") return "type title, year, anime, downloaded…";
@@ -232,6 +225,7 @@ export function BrowseShell<T>({
   initialSelectedIndex,
   initialCalendarTypeTab,
   initialCalendarRoute,
+  startupPicks,
   placeholder,
   commands,
   onSearch,
@@ -280,6 +274,7 @@ export function BrowseShell<T>({
    * here, never from whether the loaded options happen to contain calendar rows.
    */
   initialCalendarRoute?: CalendarRouteRequest;
+  startupPicks?: boolean;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
@@ -290,7 +285,7 @@ export function BrowseShell<T>({
   ) => void;
   onCalendarStatus?: (status: CalendarSessionStatus) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
-  onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
+  onLoadRecommendations?: (isCurrent: () => boolean) => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
@@ -776,15 +771,19 @@ export function BrowseShell<T>({
       setEmptyMessage("Trending failed.");
     }
   };
-  const loadRecommendations = async () => {
+  const loadRecommendations = async (startup = false) => {
     if (!onLoadRecommendations) return;
-
+    const loadingLabel = startup ? firstRun.COLD_START_LABEL : "Loading recommendations…";
+    const emptyLabel = startup
+      ? firstRun.STARTUP_EMPTY_TITLE
+      : "Recommendations are unavailable right now.";
     const requestId = searchRequestGateRef.current.begin();
+    const isCurrent = () => mountedRef.current && searchRequestGateRef.current.isCurrent(requestId);
     setQuery("");
     setLastSearchedQuery("");
     setSearchState("loading");
     setErrorMessage(null);
-    setEmptyMessage("Loading recommendations…");
+    setEmptyMessage(loadingLabel);
     setOptions([]);
     setSelectedIndex(0);
     setResultSubtitle("");
@@ -794,46 +793,42 @@ export function BrowseShell<T>({
     leaveCalendarSurface();
 
     try {
-      const response = await onLoadRecommendations();
-      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
+      const response = await onLoadRecommendations(isCurrent);
+      if (!isCurrent()) return;
 
       // Cold cache: stay on the loading surface until the network refresh lands.
       // Warm cache: paint immediately, then soft-refresh in the background.
       if (response.options.length === 0 && response.revalidate) {
         setResultSubtitle(response.subtitle);
-        setEmptyMessage("Loading recommendations…");
+        setEmptyMessage(loadingLabel);
         const nextResponse = await response.revalidate;
-        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (!isCurrent()) return;
         setOptions(nextResponse.options);
         setSelectedIndex(0);
         setResultSubtitle(nextResponse.subtitle);
-        setEmptyMessage(nextResponse.emptyMessage ?? "Recommendations are unavailable right now.");
+        setEmptyMessage(startup ? emptyLabel : (nextResponse.emptyMessage ?? emptyLabel));
         setSearchState("ready");
-        setFocusZone(nextResponse.options.length > 0 ? "list" : "query");
+        setFocusZone(firstRun.picksFocusZone(nextResponse.options.length, startup));
         return;
       }
 
       setOptions(response.options);
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
-      setEmptyMessage(response.emptyMessage ?? "Recommendations are unavailable right now.");
+      setEmptyMessage(startup ? emptyLabel : (response.emptyMessage ?? emptyLabel));
       setActiveFilterBadges([]);
       setSearchState("ready");
-      setFocusZone(response.options.length > 0 ? "list" : "query");
+      setFocusZone(firstRun.picksFocusZone(response.options.length, startup));
 
       if (response.revalidate) {
         void response.revalidate
           .then((nextResponse) => {
-            if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) {
-              return undefined;
-            }
+            if (!isCurrent()) return undefined;
             setOptions(nextResponse.options);
             setSelectedIndex(0);
             setResultSubtitle(nextResponse.subtitle);
-            setEmptyMessage(
-              nextResponse.emptyMessage ?? "Recommendations are unavailable right now.",
-            );
-            setFocusZone(nextResponse.options.length > 0 ? "list" : "query");
+            setEmptyMessage(nextResponse.emptyMessage ?? emptyLabel);
+            if (!startup) setFocusZone(nextResponse.options.length > 0 ? "list" : "query");
             return undefined;
           })
           .catch(() => {
@@ -842,7 +837,7 @@ export function BrowseShell<T>({
           });
       }
     } catch (error) {
-      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!isCurrent()) return;
 
       setSearchState("error");
       setOptions([]);
@@ -852,6 +847,13 @@ export function BrowseShell<T>({
       setEmptyMessage("Recommendations failed.");
     }
   };
+  // Startup picks are mounted, not awaited: the field is live while they load.
+  // The ref holds the first render's loader, so the effect runs once, at mount.
+  const startupPicksRef = useRef(startupPicks ? loadRecommendations : null);
+  useEffect(() => {
+    void startupPicksRef.current?.(true);
+    startupPicksRef.current = null;
+  }, []);
 
   const closeOverlay = () => {
     detailRequestGateRef.current.invalidate();
@@ -1065,6 +1067,7 @@ export function BrowseShell<T>({
     return false;
   };
 
+  const coldStart = emptyMessage === firstRun.COLD_START_LABEL;
   const listFocused = isBrowseListFocused(focusZone);
   const resultFilterFocused = isBrowseFilterFocused(focusZone);
   const idleFocused = isBrowseIdleFocused(focusZone);
@@ -1341,6 +1344,7 @@ export function BrowseShell<T>({
   const showCompanion =
     showCompanionLayout &&
     !compact &&
+    (wideBrowse || viewport.rows >= 34) &&
     !commandMode &&
     Boolean(selectedOption) &&
     (listFocused || idleFocused);
@@ -1404,7 +1408,9 @@ export function BrowseShell<T>({
   const suggestionMaxRows = Math.max(7, Math.min(12, viewport.rows - 20));
   const browseChromeRows = getBrowseChromeRows({
     hasResultSubtitle:
-      !ultraCompact && !denseInput && Boolean(resultStatus.primary || resultStatus.secondary),
+      !ultraCompact &&
+      (!denseInput || Boolean(startupPicks)) &&
+      Boolean(resultStatus.primary || resultStatus.secondary),
     hasFilterBar: showResultFilterBar,
     hasFilterBadges: activeFilterBadges.length > 0 && !ultraCompact,
     hasCalendarChrome:
@@ -1837,8 +1843,6 @@ export function BrowseShell<T>({
       (listFocused && input.toLowerCase() === "d")
     ) {
       if (selectedOption && displayOptions.length > 0 && !queryDirty && searchState === "ready") {
-        // Carry the highlighted row: the download target is read out of session
-        // state, which only tracks the cursor for actions that report it.
         onResolve("download", selectedOption.value);
       }
       return;
@@ -2113,7 +2117,7 @@ export function BrowseShell<T>({
             indicator, so no duplicate spinner is rendered here. */}
         {!activeOverlay &&
         !ultraCompact &&
-        !denseInput &&
+        (!denseInput || Boolean(startupPicks)) &&
         (resultStatus.primary || resultStatus.secondary) ? (
           <Box justifyContent="space-between">
             {resultStatus.primary ? (
@@ -2225,22 +2229,19 @@ export function BrowseShell<T>({
                 focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
                 ghostSuffix={suggestionGhost?.suffix}
                 cursorRef={queryCursorRef}
-                hint={
-                  commandMode
-                    ? undefined
-                    : suggestionBandVisible && suggestionBandModel.rows.length > 0
-                      ? "↓ suggestions · → complete · esc dismiss · ↵ search"
-                      : displayOptions.length === 0
-                        ? canFocusIdleRows
-                          ? "Type a title · ↓ for you now · / commands"
-                          : "Type a title · / commands · /guide tour · /filters guided search"
-                        : listFocused
-                          ? undefined
-                          : "↓ results · / commands"
-                }
+                hint={firstRun.browseQueryHint({
+                  commandMode,
+                  suggesting: suggestionBandVisible && suggestionBandModel.rows.length > 0,
+                  optionCount: displayOptions.length,
+                  canFocusIdleRows,
+                  listFocused,
+                  queryEmpty: query.length === 0,
+                  loadingPicks: searchState === "loading" && coldStart,
+                })}
                 maxWidth={innerWidth}
                 onRedraw={clearShellScreen}
                 dense={denseInput}
+                showHintWhenDense={Boolean(startupPicks)}
                 ignoreInput={(input, key) => {
                   if (
                     /^[1-9]$/.test(input) &&
@@ -2354,21 +2355,12 @@ export function BrowseShell<T>({
             width={Math.min(innerWidth, 72)}
           />
         ) : searchState === "loading" && !isCalendarView ? (
-          <Box marginTop={2} flexGrow={1} flexDirection="column">
-            <SakuraLoader
-              label={
-                emptyMessage.trim().length > 0 ? emptyMessage.replace(/\.\.\.$/, "…") : "Loading…"
-              }
-              sublabel={
-                emptyMessage.toLowerCase().includes("trending")
-                  ? "Fetching what's popular right now"
-                  : emptyMessage.toLowerCase().includes("recommend")
-                    ? "Building picks from your watch history"
-                    : "Matching titles across the catalog · usually a few seconds"
-              }
-              active
-            />
-          </Box>
+          <firstRun.BrowseLoadingBlock
+            message={emptyMessage}
+            coldStart={coldStart}
+            width={innerWidth}
+            rows={viewport.rows}
+          />
         ) : displayOptions.length > 0 ? (
           <Box
             flexDirection={companionBesideList ? "row" : "column"}
@@ -2558,7 +2550,7 @@ export function BrowseShell<T>({
             <StateBlock
               model={{
                 kind: "empty",
-                title: `No results for "${lastSearchedQuery}"`,
+                title: firstRun.noResultsTitle(lastSearchedQuery, mode),
                 // `emptyMessage` names the cause when we know one — a provider
                 // outage and a typo used to render the same copy (#464).
                 detail:
@@ -2611,7 +2603,7 @@ export function BrowseShell<T>({
                 // renders as a blank surface between state transitions.
                 title:
                   emptyMessage || "Search for a title — or try /trending to see what's popular",
-                detail: browseEmptyDetail(mode, emptyMessage),
+                detail: firstRun.browseEmptyDetail(mode, emptyMessage),
               }}
               width={Math.min(innerWidth, 72)}
             />
@@ -2703,9 +2695,6 @@ export function BrowseShell<T>({
         />
       ) : null}
 
-      {settings?.discoverShowOnStartup && (
-        <Text color={palette.dim}>/ recommendation · based on your history</Text>
-      )}
       {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
       <ShellFooter
         taskLabel={footerModel.taskLabel}

@@ -1,6 +1,6 @@
 import { CLI_SUBCOMMANDS, KNOWN_FLAGS } from "@/cli-args";
 import { loadProductionProviderModules } from "@/container/bootstrap-providers";
-import { HDR_MODES } from "@kunai/config";
+import { HDR_MODES, MPV_HWDEC_MODES } from "@kunai/config";
 import { listThemes } from "@kunai/design";
 
 export interface CapabilitiesProviderSummary {
@@ -25,6 +25,8 @@ export interface CapabilitiesReport {
   readonly flags: readonly string[];
   readonly themes: readonly string[];
   readonly hdrModes: readonly string[];
+  readonly mpvHwdecModes: readonly string[];
+  readonly mpvAvsyncRecoveryValues: readonly ["on", "off"];
   readonly headlessRoutes: readonly string[];
   readonly providerHotfixManifest: {
     readonly schemaVersion: 1;
@@ -62,6 +64,8 @@ export async function buildCapabilitiesReport(version: string): Promise<Capabili
     flags: [...KNOWN_FLAGS].sort(),
     themes: listThemes().map((theme) => theme.name),
     hdrModes: [...HDR_MODES],
+    mpvHwdecModes: [...MPV_HWDEC_MODES],
+    mpvAvsyncRecoveryValues: ["on", "off"],
     headlessRoutes: [
       "kunai capabilities --json",
       "kunai providers status --json",

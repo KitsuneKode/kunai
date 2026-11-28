@@ -29,6 +29,7 @@ import {
   executeRollback,
   listRollbackCandidates,
   planRollback,
+  rollbackLauncherRecoveryError,
 } from "@/services/update/native-installer/rollback";
 import { tryAcquireVersionLock } from "@/services/update/native-installer/version-lock";
 import {
@@ -226,6 +227,58 @@ describe("listRollbackCandidates / planRollback (read-only)", () => {
     }
   });
 
+  test("a profile manifest naming a foreign launcher refuses plan and execute", async () => {
+    const { root, layout } = await makeRoot();
+    await seedVerifiedVersion(layout, "1.0.0", "old");
+    await seedVerifiedVersion(layout, "2.0.0", "new");
+    await seedBinaryManifest(layout, "2.0.0", "1.0.0");
+    // Same fixture, but a profile whose configured launcher disagrees with the
+    // manifest — planning, a dry run, and a real execute must all refuse
+    // ownership-changed without touching the tree.
+    const profileLayout = {
+      ...layout,
+      profileDir: root,
+      launcherPath: join(root, "bin", "different-launcher"),
+    };
+    const before = await snapshotTree(root);
+
+    expect(await planRollback(profileLayout)).toMatchObject({
+      status: "refused",
+      code: "ownership-changed",
+    });
+    expect(await executeRollback(profileLayout, { dryRun: true })).toMatchObject({
+      status: "refused",
+      code: "ownership-changed",
+    });
+    expect(await executeRollback(profileLayout)).toMatchObject({
+      status: "refused",
+      code: "ownership-changed",
+    });
+    expect(await snapshotTree(root)).toEqual(before);
+  });
+
+  test("a Windows profile refuses rollback to a payload too old to infer its profile", async () => {
+    const { root, layout } = await makeRoot();
+    const profileLayout = {
+      ...layout,
+      profileDir: root,
+      binaryFileName: "kunai.exe",
+    };
+    await seedVerifiedVersion(profileLayout, "0.3.9", "old");
+    await seedVerifiedVersion(profileLayout, "0.4.0", "new");
+    await seedBinaryManifest(profileLayout, "0.4.0", "0.3.9");
+    const before = await snapshotTree(root);
+
+    expect(await planRollback(profileLayout)).toMatchObject({
+      status: "refused",
+      code: "not-candidate",
+      reason: "Windows profile installs require Kunai 0.4.0 or later.",
+    });
+    // Only the gated payload is filtered; the active 0.4.0 stays eligible.
+    expect((await listRollbackCandidates(profileLayout)).map((c) => c.version)).toEqual(["0.4.0"]);
+    expect(await snapshotTree(root)).toEqual(before);
+  });
+
   test("stale locks remain eligible with lockStatus stale", async () => {
     const { layout } = await makeRoot();
     await seedVerifiedVersion(layout, "1.0.0", "old");
@@ -253,6 +306,43 @@ describe("listRollbackCandidates / planRollback (read-only)", () => {
 // `readlink` on a copy fails EINVAL — so this is scoped to the platform it
 // describes. Windows launcher activation still needs its own coverage; it is
 // tracked in the Windows parity backlog in .docs/repo-infrastructure.md.
+describe("rollbackLauncherRecoveryError", () => {
+  test("reports both failures and names the retained backup", () => {
+    const snapshot = {
+      kind: "file" as const,
+      launcherPath: "/p/bin/kunai",
+      platform: "linux" as const,
+      backupPath: "/p/bin/kunai.activation-backup.1.2",
+    };
+    const publication = new Error("publication broke");
+    const restore = new Error("restore broke");
+    const error = rollbackLauncherRecoveryError(snapshot, {
+      publicationError: publication,
+      restoreError: restore,
+    });
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors).toEqual([publication, restore]);
+    expect(error.message).toContain("Rollback publication failed");
+    expect(error.message).toContain("publication broke");
+    expect(error.message).toContain("restore broke");
+    expect(error.message).toContain("Backup retained at /p/bin/kunai.activation-backup.1.2.");
+  });
+
+  test("names no backup path for non-file snapshots", () => {
+    const snapshot = {
+      kind: "missing" as const,
+      launcherPath: "/p/bin/kunai",
+      platform: "linux" as const,
+    };
+    const error = rollbackLauncherRecoveryError(snapshot, {
+      publicationError: "pub",
+      restoreError: "res",
+    });
+    expect(error.errors).toEqual(["pub", "res"]);
+    expect(error.message).not.toContain("Backup retained");
+  });
+});
+
 describePosixOnly("executeRollback activation and refusal", () => {
   test("default targets previousVersion and swaps launcher + manifest", async () => {
     const { layout } = await makeRoot();

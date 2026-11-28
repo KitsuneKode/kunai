@@ -1,4 +1,5 @@
 import { openListShell } from "@/app-shell/ink-shell";
+import { providerPickerSources } from "@/app-shell/overlay-provider-picker";
 import { chooseEpisodeFromOptions, chooseSeasonFromOptions } from "@/app-shell/pickers";
 import {
   buildPickerActionContext,
@@ -28,6 +29,12 @@ export type EpisodeSelection = {
   episode: number;
   startAt?: number;
   suppressResumePrompt?: boolean;
+  /**
+   * "Restart this episode": start at 0. `startAt` still carries the saved
+   * position so persistent mpv can offer Resume in its overlay; a player that
+   * cannot show that overlay must not treat the offer as the start.
+   */
+  restart?: boolean;
 };
 
 /**
@@ -107,6 +114,7 @@ export function resolveStartingEpisodeChoice(args: {
     return {
       ...historyEpisode,
       startAt: args.history.positionSeconds,
+      restart: true,
     };
   }
   if (args.choice === "next") {
@@ -218,7 +226,7 @@ async function switchProviderFromStartingPicker(
       .filter((provider) =>
         providerMetadataMatchesLane(provider, shellModeToProviderLane(state.mode)),
       ),
-    getProviderHealth: (providerId) => container.providerHealth.get(providerId),
+    ...providerPickerSources(container, scope.title.id),
     actionContext: buildPickerActionContext({
       container,
       taskLabel: "Choose provider",

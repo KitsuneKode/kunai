@@ -103,6 +103,8 @@ Local watch history drives resume. Nothing leaves your machine unless you opt in
 | Resume overlay            | When `resumeStartChoicePrompt` is on, choose resume vs start over before seek     |
 | Shared link timestamp     | `kunai://` `t=` applies once on first mpv launch, then per-episode history resume |
 
+The overlay itself is mpv's persistent autoplay session. Player paths that cannot show it (desktop VLC and one-shot mpv when Autoplay next is off) honor the same resume offer by opening at the saved position while `resumeStartChoicePrompt` is on. An explicit restart, replay, quality pick, or share-link timestamp still wins and starts where you asked.
+
 Episode numbers in the UI are **1-based**. Providers adapt internally.
 
 More: [Continue watching and new episodes](/docs/users/continue-watching-and-new-episodes), [Share links](/docs/users/share-links).
@@ -154,6 +156,35 @@ Configure in `/settings` or `config.json`:
   provider's other sources, but never moves to another provider on its own
 
 See [Customization](/docs/users/customization) and [Providers](/docs/users/providers).
+
+## Hardware decoding and sync recovery
+
+On desktop mpv, `mpvHwdec` controls hardware video decoding. The default
+`mpv-default` passes no `--hwdec` override, so mpv.conf and mpv's own defaults
+keep control. Choosing `auto` uses a small bounded probe, cached for seven
+days, as evidence that mpv can open a hardware decode path. A successful cache
+entry makes the next mpv process pass `--hwdec=auto-safe`; mpv then chooses the
+backend with the real video output at playback time. On a cache miss playback
+starts immediately with mpv's own behavior while the probe warms in the
+background for the next mpv process start. Discovery is OS-aware on Linux,
+macOS, and Windows; explicit mpv decoder names are also accepted. `auto-safe` and
+`auto-copy` use mpv's automatic modes directly, and `off` forces software
+decoding. If mpv is missing, the probe cannot run, or no GPU path proves
+usable, `auto` playback falls back to mpv's own default rather than failing.
+Settings → Playback, `config.json`, or `--mpv-hwdec` can change or disable the
+behavior. Changes apply when an mpv process starts; an already-running
+persistent mpv process keeps its launch-time mode.
+
+Supervised persistent playback also watches mpv's audio/video drift. Brief
+drift is left to mpv, but drift larger than about 0.3 seconds sustained across
+several samples can trigger one corrective seek at the current position. Its
+startup grace begins when mpv reports playback output or a playback restart, not
+when the process is spawned. It does not run while you pause or seek, while
+cache is stalled or the decoder is idle, during reconnects or Kunai-issued resume seeks,
+before video output starts, or for live streams. Corrections cool down for five
+seconds, repeated immediate drift gives up instead of seek-looping, and an
+episode is limited to two corrections. Set `mpvAvsyncRecovery` to `false` or use
+`--mpv-avsync-recovery off` to turn it off.
 
 ## Autoplay and auto-skip
 

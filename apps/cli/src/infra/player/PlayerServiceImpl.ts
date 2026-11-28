@@ -18,10 +18,7 @@ import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
 import { launchMpv, shouldApplyStartAtSeek } from "@/mpv";
 import { formatTimestamp } from "@/services/continuation/history-progress";
-import {
-  buildPlaybackDiagnosticEvent,
-  type DiagnosticFailureClass,
-} from "@/services/diagnostics/diagnostic-event-helpers";
+import { buildPlaybackDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { ConfigService } from "@/services/persistence/ConfigService";
@@ -37,14 +34,17 @@ import {
 } from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import { discoverMpvInvocation } from "./mpv-discovery";
+import type { MpvHardwareAccelProbe } from "./mpv-hwaccel-probe";
+import { MpvHwdecPolicy } from "./mpv-hwdec-policy";
 import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
-import { PersistentMpvSession, type PlayerCycleOptions } from "./PersistentMpvSession";
+import type { PlayerCycleOptions } from "./persistent-player-cycle";
+import { PersistentMpvSession } from "./PersistentMpvSession";
 import { PlaybackAbortedError } from "./playback-aborted";
+import { wrapPlaybackEventDiagnostics } from "./playback-event-diagnostics";
 import {
-  classifyPlaybackFailureFromEvent,
   classifyPlaybackFailureFromResult,
   recoveryForPlaybackFailure,
 } from "./playback-failure-classifier";
@@ -61,7 +61,7 @@ import type {
   PlayerPlaybackEventEnvelope,
   PlayerService,
 } from "./PlayerService";
-
+import { promptlessResumeStartAt } from "./promptless-resume-start";
 type PlaybackTargets = Pick<PlayerCycleOptions, "urlKind" | "subtitleUrlKind" | "subtitleMedia">;
 
 export class PlayerServiceImpl implements PlayerService {
@@ -83,6 +83,7 @@ export class PlayerServiceImpl implements PlayerService {
   private currentGeneration: PlaybackGeneration = INITIAL_PLAYBACK_GENERATION;
   /** Which generation installed the control the app is currently holding. */
   private activeControlGeneration: PlaybackGeneration | null = null;
+  private readonly hwdecPolicy: MpvHwdecPolicy;
 
   constructor(
     private deps: {
@@ -95,8 +96,23 @@ export class PlayerServiceImpl implements PlayerService {
       presentation?: PlayerPresentationPort;
       /** Deterministic process-boundary seam for player lifecycle tests. */
       launchMpv?: typeof launchMpv;
+      /** Deterministic seam for the cache-only hardware decode result used before playback. */
+      readCachedMpvHwdec?: () => Promise<MpvHardwareAccelProbe>;
+      /** Deterministic seam for the bounded hardware decode probe warmed in the background. */
+      probeMpvHwdec?: () => Promise<MpvHardwareAccelProbe>;
     },
-  ) {}
+  ) {
+    this.hwdecPolicy = new MpvHwdecPolicy({
+      logger: deps.logger,
+      mpv: deps.mpv,
+      readCachedMpvHwdec: deps.readCachedMpvHwdec,
+      probeMpvHwdec: deps.probeMpvHwdec,
+    });
+  }
+
+  private mpvRuntimeOptions(): Promise<MpvRuntimeOptions> {
+    return this.hwdecPolicy.runtimeOptions(this.deps.config);
+  }
 
   beginShutdown(): void {
     this.shuttingDown = true;
@@ -183,11 +199,13 @@ export class PlayerServiceImpl implements PlayerService {
     generation: PlaybackGeneration,
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
-    const publish = this.wrapPlaybackEventHandler(
+    const publish = wrapPlaybackEventDiagnostics({
       generation,
-      options.onPlaybackEvent,
-      options.correlation,
-    );
+      handler: options.onPlaybackEvent,
+      correlation: options.correlation,
+      isCurrentGeneration: (candidate) => this.isCurrentGeneration(candidate),
+      diagnostics: this.deps.diagnostics,
+    });
     let terminalHlsFailure: { readonly detail?: string; readonly httpStatus?: number } | null =
       null;
     // Addon streams are remote direct-media files that must reach mpv exactly
@@ -621,7 +639,12 @@ export class PlayerServiceImpl implements PlayerService {
     localGeneration: PlaybackGeneration,
     retiredPersistentGeneration: PlaybackGeneration,
   ): Promise<PlaybackResult> {
-    const publish = this.wrapPlaybackEventHandler(localGeneration, options.onPlaybackEvent);
+    const publish = wrapPlaybackEventDiagnostics({
+      generation: localGeneration,
+      handler: options.onPlaybackEvent,
+      isCurrentGeneration: (candidate) => this.isCurrentGeneration(candidate),
+      diagnostics: this.deps.diagnostics,
+    });
     // Local playback is one-shot. Retire an idle autoplay-chain process first
     // so only the local player owns controls and a visible mpv window.
     await this.retirePersistentSession(retiredPersistentGeneration);
@@ -665,11 +688,7 @@ export class PlayerServiceImpl implements PlayerService {
       onControlReady: (control) => this.setActiveControlFor(localGeneration, control),
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: publish,
-      mpv: {
-        ...this.deps.mpv,
-        startupPriority: this.deps.config.startupPriority,
-        hdrMode: this.deps.config.hdrMode,
-      },
+      mpv: await this.mpvRuntimeOptions(),
     });
   }
 
@@ -720,7 +739,7 @@ export class PlayerServiceImpl implements PlayerService {
         subtitlePreference: options.subtitlePreference,
         subtitleTracks: stream.subtitleList,
         displayTitle: options.displayTitle,
-        startAt: stream.isLive ? undefined : options.startAt,
+        startAt: stream.isLive ? undefined : promptlessResumeStartAt(options),
         requiresYtdl: stream.requiresYtdl,
         resolveGate: stream,
         ytdlFormat: stream.ytdlFormat,
@@ -747,11 +766,7 @@ export class PlayerServiceImpl implements PlayerService {
         },
         onPlayerReady: options.onPlayerReady,
         onPlaybackEvent: publish,
-        mpv: {
-          ...this.deps.mpv,
-          startupPriority: this.deps.config.startupPriority,
-          hdrMode: this.deps.config.hdrMode,
-        },
+        mpv: await this.mpvRuntimeOptions(),
       });
     } finally {
       options.abortSignal?.removeEventListener("abort", stopOnAbort);
@@ -799,6 +814,7 @@ export class PlayerServiceImpl implements PlayerService {
       skipPreview: options.skipPreview,
       skipCredits: options.skipCredits,
       autoNextEnabled: true,
+      avsyncRecovery: this.deps.config.mpvAvsyncRecovery,
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: publish,
       onMpvActionRequest: (action: MpvRequestedAction) => {
@@ -811,14 +827,18 @@ export class PlayerServiceImpl implements PlayerService {
 
     if (!this.persistentSession) {
       const creationEpoch = this.persistentSessionEpoch;
+      const mpvRuntime = await this.mpvRuntimeOptions();
+      if (
+        this.shuttingDown ||
+        options.abortSignal?.aborted ||
+        creationEpoch !== this.persistentSessionEpoch
+      ) {
+        throw new PlaybackAbortedError("playback aborted during player startup");
+      }
       const creation = PersistentMpvSession.create({
         stream,
         options: sharedOptions,
-        mpv: {
-          ...this.deps.mpv,
-          startupPriority: this.deps.config.startupPriority,
-          hdrMode: this.deps.config.hdrMode,
-        },
+        mpv: mpvRuntime,
         kitsuneConfig: this.deps.config.getRaw(),
         onControlReady: (control) => this.setActiveControlFor(generation, control),
       });
@@ -857,39 +877,21 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   /**
-   * The single public boundary. Raw `PlayerPlaybackEvent` callbacks live only
-   * below this line; above it every consumer receives an envelope carrying the
-   * generation that produced the event. A retired generation returns here, so
-   * it can publish neither a public event nor a diagnostic.
+   * Generation fencing stays method-shaped because lifecycle tests exercise the
+   * boundary directly; the diagnostic mechanics live in playback-event-diagnostics.
    */
   private wrapPlaybackEventHandler(
     generation: PlaybackGeneration,
     handler: ((input: PlayerPlaybackEventEnvelope) => void) | undefined,
     correlation: PlayerOptions["correlation"] = undefined,
   ): (event: PlayerPlaybackEvent) => void {
-    return (event) => {
-      if (!this.isCurrentGeneration(generation)) return;
-      const failureClass = classifyPlaybackFailureFromEvent(event);
-      const diagnosticFailureClass = mapPlaybackFailureToDiagnosticFailure(failureClass);
-      this.deps.diagnostics.record(
-        buildPlaybackDiagnosticEvent({
-          operation: operationForPlaybackEvent(event),
-          stage: event.type,
-          status: diagnosticFailureClass ? "failed" : "progress",
-          severity: diagnosticFailureClass ? "degraded" : "healthy",
-          failureClass: diagnosticFailureClass,
-          message: "MPV runtime event",
-          correlation,
-          context: {
-            event: event.type,
-            ...event,
-            playbackFailureClass: failureClass,
-            recovery: recoveryForPlaybackFailure(failureClass),
-          },
-        }),
-      );
-      handler?.({ generation, event });
-    };
+    return wrapPlaybackEventDiagnostics({
+      generation,
+      handler,
+      correlation,
+      isCurrentGeneration: (candidate) => this.isCurrentGeneration(candidate),
+      diagnostics: this.deps.diagnostics,
+    });
   }
 
   private maybeStartHlsRelay(stream: StreamInfo, options: PlayerOptions): StreamInfo {
@@ -993,40 +995,5 @@ function safeUrlHost(url: string | null | undefined): string | null {
     return new URL(url).hostname;
   } catch {
     return null;
-  }
-}
-
-function operationForPlaybackEvent(event: PlayerPlaybackEvent): string {
-  switch (event.type) {
-    case "network-buffering":
-    case "network-sample":
-    case "stream-slow":
-    case "stream-stalled":
-      return "mpv.network.sample";
-    case "ipc-command-failed":
-    case "ipc-stalled":
-    case "mpv-in-process-reconnect":
-      return "mpv.ipc.event";
-    default:
-      return "mpv.runtime.event";
-  }
-}
-
-function mapPlaybackFailureToDiagnosticFailure(
-  failureClass: ReturnType<typeof classifyPlaybackFailureFromEvent>,
-): DiagnosticFailureClass | undefined {
-  switch (failureClass) {
-    case "none":
-      return undefined;
-    case "network-buffering":
-    case "slow-stream":
-    case "expired-stream":
-      return "http";
-    case "seek-stuck":
-      return "timeout";
-    case "ipc-stuck":
-      return "ipc";
-    default:
-      return "unknown";
   }
 }

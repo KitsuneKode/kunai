@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 import { buildRemediationLines, MPV_INSTALL } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import {
   buildDoctorReport,
   formatDoctorReportText,
@@ -36,6 +37,8 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
   return {
     mpv: true,
     mpvRequired: true,
+    vlc: true,
+    vlcRequired: false,
     ffprobe: true,
     ytDlp: true,
     curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -46,6 +49,7 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
       available: false,
       reason: "test",
     },
+    mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
     issues: [],
     ...overrides,
   };
@@ -298,6 +302,104 @@ describe("buildDoctorReport", () => {
     expect(text).toMatch(/openSUSE\s+sudo zypper install mpv/);
   });
 
+  test("doctor text reports the cached hardware decode probe and mpv-absent skip", async () => {
+    const { root, layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      mpvHwdecMode: "auto",
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpvHardwareAccel: {
+            ...emptyMpvHardwareAccelProbe("hardware"),
+            probed: true,
+            autoSafeOk: true,
+            autoSafeDriver: "nvdec-copy",
+            drivers: ["vaapi", "nvdec"],
+            probedAt: 1,
+            fromCache: true,
+          },
+        }),
+    });
+    expect(formatDoctorReportText(report)).toContain(
+      "mpv-hwdec=auto · passes --hwdec=auto-safe · probe: auto-safe ok (nvdec-copy) · cached · help lists vaapi, nvdec",
+    );
+
+    const missing = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpv: false,
+          mpvHardwareAccel: emptyMpvHardwareAccelProbe("mpv-not-found"),
+        }),
+    });
+    expect(formatDoctorReportText(missing)).toContain(
+      "mpv-hwdec=mpv-default · passes no --hwdec flag · probe: skipped — mpv not found",
+    );
+  });
+
+  test("does not report an mpv hwdec flag for VLC or Android playback", async () => {
+    const { root, layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      playerChoice: "vlc",
+      mpvHwdecMode: "off",
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpv: true,
+          mpvRequired: false,
+          vlc: true,
+          vlcRequired: true,
+          mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
+        }),
+    });
+
+    expect(report.playback).toMatchObject({
+      playerKind: "managed-vlc",
+      mpvHwdec: "off",
+      mpvHwdecEmitted: null,
+    });
+    const text = formatDoctorReportText(report);
+    expect(text).toContain(
+      "mpv-hwdec=off · not applicable to managed-vlc playback · probe: not probed yet",
+    );
+    expect(text).not.toContain("passes --hwdec=no");
+
+    const android = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      playerMode: { kind: "android-handoff", target: "chooser" },
+      mpvHwdecMode: "off",
+      probeCapabilities: async () => emptyCapabilities(),
+    });
+    expect(android.playback).toMatchObject({
+      playerKind: "android-handoff",
+      mpvHwdec: "off",
+      mpvHwdecEmitted: null,
+    });
+    expect(formatDoctorReportText(android)).toContain(
+      "mpv-hwdec=off · not applicable to android-handoff playback",
+    );
+  });
+
   test("treats curl helper execution failure as an error finding", async () => {
     const { root, layout } = await makeRoot();
     await seedLegacyManifestAndStaleState(root, layout);
@@ -328,6 +430,28 @@ describe("buildDoctorReport", () => {
       (candidate) => candidate.code === "curl-invocation-failed",
     );
     expect(finding?.severity).toBe("error");
+  });
+
+  test("an invalid manifest remediates at the configured config dir, not a hardcoded default", async () => {
+    const { layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: "/tmp/kunai", version: "9.9.9" },
+      pathValue: "",
+      platform: process.platform,
+      fileExists: () => false,
+      probeCapabilities: async () => emptyCapabilities(),
+      inspectManifest: async () => ({
+        status: "invalid",
+        reason: "invalid-json",
+      }),
+    });
+    const finding = report.findings.find((f) => f.code === "invalid-manifest");
+    expect(finding?.severity).toBe("error");
+    // Under a profile the manifest lives at <profile>/config — the remediation
+    // must name that path, never the platform default.
+    expect(finding?.remediation[0]).toContain(join(layout.configDir, "install.json"));
   });
 
   test("text formatting includes remediations for error findings", async () => {
@@ -523,9 +647,10 @@ describe("buildDoctorReport on Android", () => {
   async function reportFor(input: {
     readonly env: Readonly<Record<string, string | undefined>>;
     readonly launchers: readonly string[];
+    readonly installedPlayers?: { readonly mpv: boolean; readonly vlc: boolean };
   }) {
     const { root, layout } = await makeRoot();
-    const asked: boolean[] = [];
+    const asked: unknown[] = [];
     const report = await buildDoctorReport({
       layout,
       now: () => FIXED_DATE,
@@ -534,11 +659,12 @@ describe("buildDoctorReport on Android", () => {
       platform: "linux",
       fileExists: existsSync,
       env: input.env,
+      installedPlayers: input.installedPlayers,
       androidIntentRuntime: {
         which: (command) => (input.launchers.includes(command) ? `/usr/bin/${command}` : null),
       },
       probeCapabilities: async (options) => {
-        asked.push(options.requireMpv);
+        asked.push(options.playerMode);
         return emptyCapabilities();
       },
     });
@@ -547,9 +673,35 @@ describe("buildDoctorReport on Android", () => {
 
   test("a phone install is not broken for lacking desktop mpv", async () => {
     const android = await reportFor({ env: TERMUX_ENV, launchers: ["termux-am"] });
-    expect(android.asked).toEqual([false]);
-    const desktop = await reportFor({ env: {}, launchers: [] });
-    expect(desktop.asked).toEqual([true]);
+    expect(android.asked).toEqual([{ kind: "android-handoff", target: "chooser" }]);
+    const desktop = await reportFor({
+      env: {},
+      launchers: [],
+      installedPlayers: { mpv: true, vlc: false },
+    });
+    expect(desktop.asked).toEqual([{ kind: "managed-mpv" }]);
+  });
+
+  test("auto on a VLC-only desktop probes VLC, not mpv, as the required player", async () => {
+    const { root, layout } = await makeRoot();
+    const asked: unknown[] = [];
+    await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      env: {},
+      playerChoice: "auto",
+      installedPlayers: { mpv: false, vlc: true },
+      probeCapabilities: async (options) => {
+        asked.push(options.playerMode);
+        return emptyCapabilities({ mpv: false, vlc: true, mpvRequired: false, vlcRequired: true });
+      },
+    });
+
+    expect(asked).toEqual([{ kind: "managed-vlc" }]);
   });
 
   test("reports the player handoff launcher when one exists", async () => {

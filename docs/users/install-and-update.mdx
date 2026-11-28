@@ -3,7 +3,7 @@ title: Install and Update
 description: Install Kunai on Android, Linux, macOS, or Windows via the native binary or npm, then keep it current, with upgrade, rollback, and uninstall behaviour explained.
 ---
 
-Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime, so you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
+Kunai supports **compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime, so you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
 
 <KunaiFoxBanner pose="wait" eyebrow="Install" title="One command, then keep it current.">
   Native binaries are the default. npm is a launcher around the same platform binary.
@@ -132,6 +132,10 @@ rule applies. On a terminal the download shows one updating progress line
 
 Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`. After the binary is in place it also drops portable `yt-dlp` and (on x64) curl-impersonate into `%LOCALAPPDATA%\kunai\deps\`; see [Optional dependencies](#optional-dependencies). `mpv` remains a package-manager prompt.
 
+Windows stores both data and cache in `%LOCALAPPDATA%\kunai`. The installer
+cleans up its own staging files, and `kunai uninstall` preserves history,
+cache, and downloaded videos in that shared directory.
+
 Open a new terminal after installation if `kunai` is not visible yet. The
 installer prints the PATH winner. If another `kunai` is still earlier (npm,
 Bun, pnpm, Yarn, Scoop, Chocolatey, or WinGet), it lists each competing path
@@ -150,9 +154,9 @@ brew install kitsunekode/kunai/kunai
 ```
 
 The formula fetches the same checksum-pinned release archives as the installer
-and installs the binary as `kunai`. `mpv` is your own install (`brew install
-mpv`). Kunai needs it for playback but the formula does not force it as a
-dependency. Use `brew upgrade kunai` and `brew uninstall kunai` for this install,
+and installs the binary as `kunai`. The player is your own install: `brew install
+mpv` (recommended), or VLC. Kunai needs one of them for playback, but the
+formula does not force either as a dependency. Use `brew upgrade kunai` and `brew uninstall kunai` for this install,
 including v0.3.0. Starting with v0.4.0, Kunai detects the Cellar path and
 displays those commands.
 
@@ -184,7 +188,7 @@ less PKGBUILD
 makepkg -si
 ```
 
-`mpv` is a hard dependency; `yt-dlp`, `ffmpeg`, and `curl` are optional
+A desktop player (`mpv` or VLC) is required for playback; `yt-dlp`, `ffmpeg`, and `curl` are optional
 dependencies for extra sources and downloads. `kunai upgrade` detects
 `/usr/bin/kunai` and prints your package-manager update path (`yay -Syu
 kunai-bin` or your AUR helper); `kunai uninstall` prints `sudo pacman -R
@@ -209,6 +213,11 @@ kunai --setup
 ```
 
 Diagnose PATH shadows with `kunai doctor`. `kunai upgrade` / `kunai uninstall` follow install ownership when a manifest exists.
+
+If your global npm prefix is system-owned on Linux or macOS, run
+`npm config set prefix ~/.local` and retry the install, or use the native
+binary installer. The installer scripts check the selected manager's launcher
+directory and help put it on PATH.
 
 </Tab>
 <Tab value="Source">
@@ -247,8 +256,8 @@ bash gets two files because `~/.bashrc` is read by interactive non-login shells
 and a login shell reads only the login file; writing exactly one of the login
 files keeps the line from being applied twice.
 
-The block is delimited and written once, so re-running the installer will not
-stack duplicates:
+The installer writes one delimited block per added directory. Re-running the
+same install does not duplicate its block:
 
 ```sh
 # >>> kunai installer >>>
@@ -285,17 +294,35 @@ prompts are **skipped, not accepted**, and the installer says which step it
 skipped. Before 0.3.0 a missing terminal defaulted to yes and could run
 `sudo apt-get`/`pacman`/`dnf install` unattended.
 
+### What the installer tells you to run
+
+The installer ends with the two commands that matter:
+
+```
+Watch something:
+  kunai -q -S "Dune"     search and play in one step
+  kunai                  browse, with a two-question setup
+```
+
+`kunai -q -S "Dune"` plays the top result and does not stop for setup. A bare
+`kunai` on a new machine asks two things first. See
+[Getting Started](/docs/users/getting-started#what-the-first-run-asks).
+
 ### Optional dependencies
 
-Kunai needs `mpv` to play anything, and `yt-dlp` for YouTube. **Package-manager
+Kunai needs `mpv` or VLC to play anything on desktop, and `yt-dlp` for YouTube. **Package-manager
 installs are never run unless you confirm on a real terminal.** The installer
 checks whether they are already present, and if they are not it prints the exact
 command for your package manager.
 
+With VLC present and no `mpv`, the installer says that Kunai will play in VLC
+and that `mpv` is optional. It still shows the command, in case you want `mpv`
+too.
+
 On a TTY it offers to run that command:
 
 ```
-! mpv is not installed — Kunai needs it to play anything.
+! No video player found; Kunai needs mpv or VLC to play anything.
 
   This will run:
     sudo pacman -S --needed mpv yt-dlp
@@ -386,13 +413,45 @@ kunai uninstall            # ownership-aware removal
 kunai uninstall --purge    # also delete config, data, cache, and default downloads
 ```
 
-**`--purge` deletes downloaded videos in the default download directory:**
+**`--purge` deletes downloaded videos in the default download directory.**
+Kunai shows the directory before deleting and asks for confirmation in an
+interactive terminal. Scripts that pass `--purge` authorize deletion.
+The default directory is
 Linux `~/.local/share/kunai/downloads` (or `$XDG_DATA_HOME/kunai/downloads`),
 macOS `~/Library/Application Support/kunai/downloads`, and Windows
 `%LOCALAPPDATA%\kunai\downloads`. Custom/external download directories outside
 Kunai's config, data, and cache directories are preserved.
 
 Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall; lifecycle logic stays inside the binary.
+
+## Custom profile root
+
+`KUNAI_CONFIG_DIR` selects a dedicated Kunai **profile root** for the CLI and both installer scripts. Kunai builds the whole layout underneath it:
+
+```text
+<root>/config/config.json          # config + install.json manifest
+<root>/config/mpv/kunai-bridge.lua # mpv bridge script
+<root>/data/kunai-data.sqlite      # watch history and metadata
+<root>/cache/kunai-cache.sqlite    # stream cache
+<root>/tmp                         # scratch
+<root>/bin                         # installer launcher (install.sh/install.ps1)
+```
+
+Rules that apply:
+
+- **The value must be absolute.** An empty or relative value, including a Windows drive-root-relative path such as `\kunai`, is a startup error, not a fallback to defaults; both the CLI and the installer scripts abort.
+- **The root must be a dedicated directory.** It cannot be the filesystem root, your home directory, an ancestor of home, or overlap any platform-default Kunai directory (including through symlinks). On Windows, 8.3 short names do not bypass those checks. On Android/Termux the variable is ignored; the app-owned HOME layout is used instead.
+- **Ownership is marked.** The first real write creates `<root>/.kunai-profile` (`kunai-profile-v1`). An empty or missing directory is claimed; a _nonempty_ directory without that marker is never adopted; the CLI and both installers refuse rather than risk touching something else's files. The CLI and both installers exit with status 2 when they refuse a profile.
+- **Credentials stay inside the profile.** Under a profile root Kunai always uses file-based credential storage; the account-wide OS vaults (Keychain, libsecret, Windows PasswordVault) are never reachable, even with `KUNAI_CREDENTIAL_BACKEND` set.
+- **Unset it to go back.** Removing the variable returns Kunai to the platform-default layout. Kunai does not copy or migrate data between profiles.
+- Uninstall's profile purge removes the `config`, `data`, `cache` and `tmp` directories and the managed launcher. It never removes the profile root, the `.kunai-profile` marker, or unrelated files beside them.
+- Debug logs still go to `./logs.txt` with `--debug`. A custom download directory can live outside the profile root.
+
+Under `KUNAI_CONFIG_DIR` the installers accept `KUNAI_DATA_DIR`, `KUNAI_CACHE_DIR`, and `KUNAI_BIN_DIR` only when they name exactly `<root>/data`, `<root>/cache`, and `<root>/bin`; leave them unset so the installers and the CLI agree on the layout.
+
+The launcher in `<root>/bin` is a small wrapper (`kunai` on Linux/macOS, `kunai.cmd` on Windows) that binds the profile from its own directory and runs the active versioned payload (on Windows the `kunai.exe` binary lives only inside `<root>/data/versions/<version>/`). Profile installs never persist PATH; the installers print a session-local PATH command and a direct wrapper invocation instead. Subsequent calls need no environment variable, for example `<root>/bin/kunai upgrade` or `<root>/bin/kunai uninstall`. Under a profile the installers also refuse the account-wide methods; only the binary method is supported. On Windows, the versioned executable validates the profile from its real on-disk location; an explicit `KUNAI_CONFIG_DIR` still takes precedence. Windows profile installs require Kunai 0.4.0 or later.
+
+If you exported `KUNAI_CONFIG_DIR` before but want to keep using your existing runtime profile, unset it. The platform-default layout is unchanged. To move the installation itself into the new layout, reinstall with `kunai install` or the installer script rather than copying the old `install.json`, which records absolute paths.
 
 `kunai --version` prints `kunai <version> (<channel>)`. `install.json` is
 authoritative when present; otherwise Kunai detects the channel from the
@@ -431,29 +490,29 @@ The update panel shows install-method-aware guidance:
 
 You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` always remains available.
 
-## Platform support matrix (0.3.0)
+## Platform support matrix
 
-| Target                                        | Status                                                                        |
-| --------------------------------------------- | ----------------------------------------------------------------------------- |
-| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                                                                 |
-| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                                                                 |
-| `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                      |
-| `windows-x64`                                 | **Beta**                                                                      |
-| `windows-arm64`                               | **Experimental**                                                              |
-| `android-arm64`, `android-x64` (Bionic)       | **Experimental preview; API 28 artifact floor, device qualification pending** |
-| WSL                                           | Linux binary + Linux mpv/PATH/data, not Windows-native                        |
-| FreeBSD / other BSD                           | **Unsupported** binary; npm/bun/source only                                   |
-| iOS / iPadOS                                  | **Unsupported**; terminal runtime and VLC handoff remain unproven             |
-| Code signing / notarization                   | Not in beta scope; see [Unsigned binaries](#unsigned-binaries-beta) above     |
+<PlatformSupportTable />
+
+| Environment               | Status                                                                    |
+| ------------------------- | ------------------------------------------------------------------------- |
+| WSL                       | Linux binary + Linux player/PATH/data, not Windows-native                 |
+| FreeBSD / other BSD       | **Unsupported** binary; npm/bun/source only                               |
+| iOS / iPadOS              | **Unsupported**; terminal runtime and VLC handoff remain unproven         |
+| Code signing/notarization | Not in beta scope; see [Unsigned binaries](#unsigned-binaries-beta) above |
 
 ### Alpine / musl quick start
 
 ```sh
-apk add mpv yt-dlp ffmpeg
+apk add libstdc++ libgcc mpv yt-dlp ffmpeg
 curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup
 ```
+
+The native binary needs `libstdc++` and `libgcc` even if you use another player.
+If the installer reports a loader error, run `sudo apk add libstdc++ libgcc`
+on Alpine and rerun the installer as your regular user.
 
 ### Windows-native vs WSL
 

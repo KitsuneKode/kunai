@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T10:13:00Z"
+lastReviewed: "2026-11-27T17:25:14Z"
 ---
 
 # Kunai — Testing Strategy
@@ -58,15 +58,25 @@ repository, so a fixture spawned from the pre-push hook with `...process.env`
 writes there instead (it once set `core.bare=true` and committed fixture
 commits onto a branch). `git-fixture-env.test.ts` fails on a new one.
 
-Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
-throwaway profile. It redirects HOME/XDG/APPDATA and forces
-`KUNAI_CREDENTIAL_BACKEND=file` and `DO_NOT_TRACK=1`: native credential vault entries belong to the
-OS account and are not isolated by a different HOME. `createCredentialVault()`
-consumes that existing override before probing an OS backend. The common
-compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
-the prior overrides with the other environment values. The CLI test preload
-also forces DNT, so local test runs with `CI=0` cannot opt into production
-analytics. A throwaway profile and a fixed UUID alone do not prevent production
+Every test package that touches file-backed storage carries a `bunfig.toml`
+test preload (`test/helpers/storage-preload.ts` at the root,
+`apps/cli/test/storage-preload.ts` for the CLI) that runs
+`installTestStorageIsolation()` before any test module loads: one throwaway
+`KUNAI_CONFIG_DIR` profile per process — and therefore per `--parallel` worker —
+rooted at `<root>/profile` (a child of, never equal to, the fake home) with
+the `.kunai-profile` ownership marker seeded up front, while HOME/USERPROFILE,
+the XDG trio, APPDATA/LOCALAPPDATA all point at `<root>` itself, plus the file
+credential backend and `DO_NOT_TRACK=1`.
+TMPDIR/TMP/TEMP are left alone so unrelated `os.tmpdir()` fixtures keep working.
+Standalone harnesses (launchers, shells, non-`bun test` entrypoints) get the same
+environment from `storageRootEnv()` in `test/helpers/storage-env.ts`, re-exported
+through `apps/cli/test/helpers/storage-env.ts`; `applyStorageRootEnv()` applies
+it in-process and restores the prior values afterward — use it only when a test
+needs a _separate_ fixture profile from the one the preload installed. Native
+credential vault entries belong to the OS account and are not isolated by a
+different HOME, which is why the helper forces `KUNAI_CREDENTIAL_BACKEND=file`
+and why `createCredentialVault()` never picks an OS vault under a profile
+override. A throwaway profile and a fixed UUID alone do not prevent production
 install counts. Backend-specific tests
 must use explicit injected environment and spawn ports; they must never probe
 the developer's credential store. Installer fixture containment checks use the
@@ -78,16 +88,15 @@ root itself and child names beginning with dots remain valid.
 1. Start with the feature map and the owning test file. Use
    `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
    reproduction; the package script supplies the timeout budget and preload.
-   `bun test` runs with the developer's real home, so a test that mounts a shell
-   or boots a service writes the real profile unless it isolates itself
-   (`BrowseShell` saves a submitted query to search history, for one). Isolate
-   with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. Check resolved
-   config/data/cache containment against the temporary root before loading a
-   profile; do not read the real profile to test whether isolation worked.
-   The CLI test preload (`apps/cli/test/helpers/profile-guard.ts`) stats the real
-   config/data/cache roots, `config.json`, the mpv bridge script and both SQLite
-   files before the run and fails it, naming each path, on any lasting change —
-   it detects, it does not block, and it never creates a missing profile.
+   Check resolved config/data/cache containment against the temporary root
+   before loading a profile; do not read the real profile to test whether
+   isolation worked. The CLI preload also installs the real-profile guard
+   (`apps/cli/test/helpers/profile-guard.ts`) _before_ the sandbox applies: it
+   stats the platform-default profile plus any valid inherited
+   `KUNAI_CONFIG_DIR` profile — the config/data/cache roots, `config.json`, the
+   mpv bridge script and both SQLite files — and fails the run, naming each
+   path, on any lasting change. It detects, it does not block, it is read-only,
+   and it never creates a missing profile.
 2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
@@ -673,7 +682,7 @@ not a sleep or an enlarged command timeout.
 Rules that make the loop trustworthy:
 
 - every claim cites captured evidence — no quote, no verification
-- the profile is always a throwaway; `KUNAI_CONFIG_DIR` is never an override
+- the profile is always a throwaway; `storageRootEnv` sets the full environment
 - analytics stays off; `assertPrivacyClean()` rejects a present `installId`
   without echoing its value
 - a frame that renders before its input handlers attach is real UX truth —

@@ -39,6 +39,37 @@ export function manifestUsesHostRootSegmentPaths(manifestText: string): boolean 
   return false;
 }
 
+/**
+ * Resolve a nested playlist reference, propagating an `api_key` query to a
+ * same-origin child playlist that omits it. VidBolt-style CDNs sign every
+ * playlist this way while still serving unsigned media segments; ordinary
+ * segment references intentionally keep RFC resolution.
+ */
+export function resolveHlsPlaylistUrl(manifestUrl: string, playlistPath: string): string {
+  const resolved = resolveHlsSegmentUrl(manifestUrl, playlistPath);
+  try {
+    const parent = new URL(manifestUrl);
+    const child = new URL(resolved);
+    const apiKey = parent.searchParams.get("api_key");
+    if (
+      apiKey &&
+      child.origin === parent.origin &&
+      !child.searchParams.has("api_key") &&
+      isHlsPlaylistUrl(child.toString())
+    ) {
+      child.searchParams.set("api_key", apiKey);
+      return child.toString();
+    }
+  } catch {
+    // Invalid input already had the standard-resolution fallback above.
+  }
+  return resolved;
+}
+
+function isPlaylistReference(reference: string): boolean {
+  return /\.m3u8(?:[?#]|$)/i.test(reference);
+}
+
 export function isHlsMasterPlaylist(manifestText: string): boolean {
   if (/#EXT-X-STREAM-INF/i.test(manifestText)) return true;
   for (const line of manifestText.split(/\r?\n/)) {
@@ -51,15 +82,42 @@ export function isHlsMasterPlaylist(manifestText: string): boolean {
 
 /** First nested playlist URI from a master playlist; prefers video/index-v variants. */
 export function parseFirstHlsVariantPath(manifestText: string): string | null {
-  const uris: string[] = [];
-  for (const line of manifestText.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    if (isHlsPlaylistUrl(trimmed) || /\.m3u8(?:[?#]|$)/i.test(trimmed)) {
-      uris.push(trimmed);
+  const lines = manifestText.split(/\r?\n/);
+  // RFC 8216 puts the variant URI on the first non-tag line after
+  // `#EXT-X-STREAM-INF`. The extension is not part of the contract: Rivestream
+  // backends obfuscate playlists as `.m3u8.png`, so extension-based parsing
+  // misreads a valid master as having no variant at all.
+  const variants: { readonly uri: string; readonly hasResolution: boolean }[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const tag = lines[index]?.trim() ?? "";
+    if (!tag.startsWith("#EXT-X-STREAM-INF")) continue;
+    for (let follow = index + 1; follow < lines.length; follow += 1) {
+      const candidate = lines[follow]?.trim() ?? "";
+      if (!candidate) continue;
+      if (candidate.startsWith("#") && !candidate.startsWith("#EXT")) continue;
+      if (candidate.startsWith("#EXT")) break;
+      variants.push({ uri: candidate, hasResolution: /RESOLUTION=/i.test(tag) });
+      break;
     }
   }
-  if (uris.length === 0) return null;
+  // A STREAM-INF entry can be audio-only, so the first one is not always
+  // video: prefer a declared resolution, then the filename heuristic.
+  if (variants.length > 0) {
+    return (
+      variants.find((variant) => variant.hasResolution)?.uri ??
+      preferVideoUri(variants.map((variant) => variant.uri))
+    );
+  }
+
+  // Some packagers emit a bare list of nested playlists without STREAM-INF.
+  return preferVideoUri(
+    lines
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && isHlsPlaylistUrl(line)),
+  );
+}
+
+function preferVideoUri(uris: readonly string[]): string | null {
   return (
     uris.find((uri) => /index-v|\/v\d|video|1080|720|480|360/i.test(uri)) ??
     uris.find((uri) => !/index-a|audio|\/a\d/i.test(uri)) ??
@@ -94,13 +152,10 @@ export function parseFirstHlsMediaSegmentPath(manifestText: string): string | nu
  * be the URL the playlist was finally served from, after redirects.
  */
 export function absolutizeHlsManifest(manifestText: string, manifestUrl: string): string {
-  const absolute = (reference: string): string => {
-    try {
-      return new URL(reference, manifestUrl).toString();
-    } catch {
-      return reference;
-    }
-  };
+  const absolute = (reference: string): string =>
+    isPlaylistReference(reference)
+      ? resolveHlsPlaylistUrl(manifestUrl, reference)
+      : resolveHlsSegmentUrl(manifestUrl, reference);
   return manifestText
     .split(/\r?\n/)
     .map((line) => {
@@ -119,6 +174,16 @@ export function absolutizeHlsManifest(manifestText: string, manifestUrl: string)
 
 export function shouldMaterializeHlsManifest(manifestUrl: string, manifestText: string): boolean {
   if (!isHlsPlaylistUrl(manifestUrl)) return false;
+  try {
+    if (new URL(manifestUrl).searchParams.has("api_key") && isHlsMasterPlaylist(manifestText)) {
+      // The child playlists need the credential copied onto their own URLs;
+      // ffmpeg/mpv otherwise drop it during RFC relative resolution.
+      return true;
+    }
+  } catch {
+    // Invalid URLs cannot be HLS playback input here; fall through to the
+    // ordinary host-root heuristic.
+  }
   if (!manifestUsesHostRootSegmentPaths(manifestText)) return false;
   return manifestText.length > FFMPEG_HLS_PARTIAL_READ_BYTES || isKnownHostRootHlsCdn(manifestUrl);
 }

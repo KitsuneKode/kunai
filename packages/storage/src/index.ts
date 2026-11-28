@@ -17,7 +17,16 @@ export type {
   DatabaseMaintenanceResult,
   MaintenanceDatabaseKind,
 } from "./maintenance";
-export { getKunaiPaths, joinerFor, joinerForNodePlatform } from "./paths";
+export {
+  checkDesktopProfile,
+  DesktopProfileError,
+  getKunaiPaths,
+  inferWindowsProfileFromExecutable,
+  joinerFor,
+  joinerForNodePlatform,
+  PROFILE_MARKER,
+  PROFILE_MARKER_CONTENT,
+} from "./paths";
 export type { KunaiPathOptions, KunaiPaths, StoragePlatform } from "./paths";
 export { openKunaiDatabase, openKunaiDatabaseWithCorruptionRecovery } from "./sqlite";
 export type { KunaiDatabase, OpenDatabaseOptions } from "./sqlite";

@@ -25,7 +25,7 @@ export const TMDB_ALT_BASE = "https://api.tmdb.org/3";
  * trending and recommendations down for every install at once. Kept only as
  * the last resort until a Kunai key is injected at build time.
  */
-export const LEGACY_PUBLIC_TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
+export const LEGACY_PUBLIC_TMDB_API_KEY: string | null = "653bb8af90162bd98fc7ee32bcbbfb3d";
 
 /**
  * Which TMDB credential direct requests use, in order:
@@ -34,14 +34,14 @@ export const LEGACY_PUBLIC_TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
  *    sends requests to TMDB itself first — nothing in between depends on Kunai.
  * 2. `KUNAI_BUNDLED_TMDB_API_KEY` — Kunai's key, inlined at release build time
  *    when CI provides `KUNAI_TMDB_BUILD_KEY` (see `RELEASE_DEFINE`).
- * 3. The legacy borrowed key.
+ * 3. The legacy borrowed key, while it remains shipped.
  *
  * A user key TMDB rejects (401) is set aside for {@link USER_KEY_REJECTED_RETRY_MS}
  * and the shipped key serves meanwhile, so a typo never takes the catalog down.
  */
 export interface TmdbApiKeyResolution {
   readonly key: string;
-  readonly source: "user" | "kunai" | "legacy";
+  readonly source: "user" | "kunai" | "legacy" | "none";
   /** v3 keys ride in the `api_key` query; v4 read tokens in `Authorization`. */
   readonly kind: TmdbCredentialKind;
   /** Where a user key came from. */
@@ -94,11 +94,20 @@ export function resolveTmdbApiKey(
   return shippedTmdbApiKey();
 }
 
-/** The key Kunai itself ships: the build-time Kunai key, else the legacy key. */
-export function shippedTmdbApiKey(): TmdbApiKeyResolution {
+/**
+ * The key Kunai itself ships: the build-time Kunai key, else the legacy key
+ * while it remains here. The nullable seam is deliberate: retiring the legacy
+ * key is changing the constant above to `null`; the routing below already
+ * understands the resulting `none` credential instead of treating an empty key as real.
+ */
+export function shippedTmdbApiKey(
+  legacyKey: string | null = LEGACY_PUBLIC_TMDB_API_KEY,
+): TmdbApiKeyResolution {
   const bundled = process.env.KUNAI_BUNDLED_TMDB_API_KEY?.trim();
   if (bundled) return { key: bundled, source: "kunai", kind: classifyTmdbCredential(bundled) };
-  return { key: LEGACY_PUBLIC_TMDB_API_KEY, source: "legacy", kind: "api-key" };
+  const legacy = legacyKey?.trim();
+  if (legacy) return { key: legacy, source: "legacy", kind: "api-key" };
+  return { key: "", source: "none", kind: "api-key" };
 }
 
 /** What /diagnostics shows about the TMDB credential. */
@@ -157,15 +166,16 @@ const TMDB_KEYLESS_FIRST: readonly TmdbHost[] = [
   TMDB_DIRECT_HOST,
   TMDB_ALT_HOST,
 ];
-/** With the user's own key, TMDB itself is asked first; mirrors are the fallback. */
+/** With a real key (the user's or Kunai's bundled key), TMDB itself is asked first. */
 const TMDB_DIRECT_FIRST: readonly TmdbHost[] = [
   TMDB_DIRECT_HOST,
   TMDB_ALT_HOST,
   ...TMDB_PROXY_HOSTS,
 ];
 
-function tmdbHostOrder(): readonly TmdbHost[] {
-  return resolveTmdbApiKey().source === "user" ? TMDB_DIRECT_FIRST : TMDB_KEYLESS_FIRST;
+function tmdbHostOrder(resolveCredential: () => TmdbApiKeyResolution): readonly TmdbHost[] {
+  const source = resolveCredential().source;
+  return source === "user" || source === "kunai" ? TMDB_DIRECT_FIRST : TMDB_KEYLESS_FIRST;
 }
 
 /** A keyed host answered 401: the credential, not the request, was refused. */
@@ -298,8 +308,9 @@ export function clearTmdbSessionCache(): void {
 const RATE_LIMITED_RETRY_AFTER_MS = 30 * 1000;
 
 /** A 4xx other than 429: TMDB's real answer, identical on every host. */
+/** A 4xx is TMDB's answer to the request. A 3xx (a keyed request never follows one) is not. */
 function isDefinitiveTmdbStatus(status: number): boolean {
-  return status < 500 && status !== 429;
+  return status >= 400 && status < 500 && status !== 429;
 }
 
 /** The shape a show or season answer must have before it may be kept as last-known-good. */
@@ -397,10 +408,11 @@ function recordEpisodesAnswer(fromSaved: boolean): void {
 async function fetchTmdbHostJson(
   host: TmdbHost,
   normalizedPath: string,
-  signal?: AbortSignal,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+  resolveCredential: () => TmdbApiKeyResolution,
 ): Promise<JsonValue> {
-  const credential = host.needsApiKey ? resolveTmdbApiKey() : null;
+  const credential = host.needsApiKey ? resolveCredential() : null;
   const joiner = normalizedPath.includes("?") ? "&" : "?";
   const url =
     credential?.kind === "api-key"
@@ -409,7 +421,14 @@ async function fetchTmdbHostJson(
   const headers: Record<string, string> =
     credential?.kind === "bearer" ? { authorization: `Bearer ${credential.key}` } : {};
   return observeOnlineIfBound("search-error", async () => {
-    const res = await fetch(url, { headers, signal: withTimeoutSignal(signal, timeoutMs) });
+    // A keyed request never follows a redirect: the v3 key rides in this URL,
+    // and fetch would carry it to whatever origin the redirect names. A 3xx
+    // here fails this host, and the caller's fallback moves on.
+    const res = await fetch(url, {
+      headers,
+      redirect: credential ? "manual" : "follow",
+      signal: withTimeoutSignal(signal, timeoutMs),
+    });
     if (res.status === 401 && credential) {
       await res.body?.cancel().catch(() => undefined);
       throw new TmdbCredentialRejectedError(credential);
@@ -440,12 +459,15 @@ export async function fetchTmdbJsonWithFallback(
   path: string,
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  resolveCredential: () => TmdbApiKeyResolution = resolveTmdbApiKey,
 ): Promise<JsonValue> {
   const normalized = normalizePath(path);
   const now = Date.now();
   let lastError: Error | null = null;
 
-  const hosts = tmdbHostOrder();
+  const hosts = tmdbHostOrder(resolveCredential).filter(
+    (host) => !host.needsApiKey || resolveCredential().key !== "",
+  );
   const resting = (host: TmdbHost) => now < (rateLimitedUntil.get(host.base) ?? 0);
   const eligible = hosts.filter(
     (host) => now >= (hostRetryAfter.get(host.base) ?? 0) && !resting(host),
@@ -474,14 +496,21 @@ export async function fetchTmdbJsonWithFallback(
   let refusedKey: string | null = null;
   try {
     for (const host of candidates) {
+      if (host.needsApiKey && resolveCredential().key === "") continue;
       // Skip a keyed host only while it would send the refused credential. A
       // refused user key is set aside below, so the next keyed host retries
       // with the shipped key instead of being skipped.
-      if (host.needsApiKey && refusedKey !== null && resolveTmdbApiKey().key === refusedKey) {
+      if (host.needsApiKey && refusedKey !== null && resolveCredential().key === refusedKey) {
         continue;
       }
       try {
-        const value = await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
+        const value = await fetchTmdbHostJson(
+          host,
+          normalized,
+          signal,
+          timeoutMs,
+          resolveCredential,
+        );
         hostRetryAfter.delete(host.base);
         nextHalfOpenProbeAt = 0;
         return value;

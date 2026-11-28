@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { readStandaloneAnalyticsConsented } from "@/services/persistence/standalone-config";
+import { getKunaiPaths } from "@kunai/storage";
 
 import {
   readInstallManifest,
@@ -63,6 +64,21 @@ const defaultPorts: RunUpgradePorts = {
 export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
   const ports: RunUpgradePorts = { ...defaultPorts, ...opts.ports };
   const manifest = await ports.readInstallManifest();
+
+  // A live profile run may only upgrade its own versioned binary install.
+  // With no manifest, a different method, or a flat layout, upgrading would
+  // reach past the profile into an account-wide installation.
+  if (
+    opts.ports === undefined &&
+    getKunaiPaths().profileDir !== undefined &&
+    (!manifest || manifest.method !== "binary" || !manifest.versionedPath)
+  ) {
+    console.error(
+      "This profile has no native binary install to upgrade. Install into the profile with `kunai install` or the installer script instead.",
+    );
+    return 1;
+  }
+
   const channel = manifest?.method ?? detectInstallMethod({ fileExists: existsSync }).kind;
   const binPath = manifest?.launcherPath ?? process.execPath;
   const dlBase = manifest?.downloadBaseUrl ?? DEFAULT_DL_BASE;

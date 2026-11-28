@@ -6,6 +6,7 @@ import {
   type SetupInitialState,
   type SetupPrefs,
 } from "@/app-shell/setup-shell";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
@@ -19,6 +20,8 @@ import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 const READY: CapabilitySnapshot = {
   mpv: true,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -29,6 +32,7 @@ const READY: CapabilitySnapshot = {
     available: false,
     reason: "test fixture",
   },
+  mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
   issues: [],
 };
 

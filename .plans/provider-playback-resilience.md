@@ -84,9 +84,10 @@ every Miruro mirror is currently challenged; do not raise the number blind.
 
 ## P2 — Schedule the crypto freshness check
 
-`test:live:allmanga-crypto` exists but nothing runs it. It is one request and it
-fails with the exact remedy attached, so it belongs on the provider-matrix
-workflow's schedule — the point is to learn about a rotation before users do.
+Landed in #721 as `.github/workflows/allmanga-crypto-canary.yml`, which files
+or comments on an issue when the pinned set goes stale. It has been red since
+2026-11-23 (#724, `build-id-rotated`); the remaining work is the recovery
+itself, per the AllManga dossier.
 
 ## Notes carried forward
 

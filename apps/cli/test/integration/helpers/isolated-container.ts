@@ -1,9 +1,15 @@
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Container } from "@/container";
-import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
+import {
+  getKunaiPaths,
+  PROFILE_MARKER,
+  PROFILE_MARKER_CONTENT,
+  type KunaiPaths,
+  type StoragePlatform,
+} from "@kunai/storage";
 
 import { storageRootEnv } from "../../helpers/storage-env";
 
@@ -22,14 +28,23 @@ function hostStoragePlatform(): StoragePlatform {
   return "linux";
 }
 
-export function createIsolatedCliProfile(label: string): IsolatedCliProfile {
-  const rootDir = mkdtempSync(join(tmpdir(), `kunai-integration-${label}-`));
+export function createIsolatedCliProfile(
+  label: string,
+  rootDir = mkdtempSync(join(tmpdir(), `kunai-integration-${label}-`)),
+): IsolatedCliProfile {
   const env = storageRootEnv(rootDir);
   const paths = getKunaiPaths({
     platform: hostStoragePlatform(),
     homeDir: rootDir,
     env,
   });
+  // Seed the ownership marker before anything else under the profile root —
+  // the CLI gate refuses a nonempty unmarked root.
+  if (paths.profileDir === undefined) {
+    throw new Error("isolated cli profile env did not resolve a profile dir");
+  }
+  mkdirSync(paths.profileDir, { recursive: true });
+  writeFileSync(join(paths.profileDir, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
   mkdirSync(paths.configDir, { recursive: true });
   mkdirSync(paths.dataDir, { recursive: true });
   mkdirSync(paths.cacheDir, { recursive: true });

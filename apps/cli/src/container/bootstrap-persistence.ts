@@ -418,8 +418,12 @@ export async function bootstrapPersistence(
     paths,
     onFallback: (backend, reason) => {
       dbg("credential-vault", `using ${backend} backend: ${reason}`);
+      // Test harnesses force the file backend explicitly; the dedicated-profile
+      // notice is for users, not for a run that already asked for file storage.
+      if (paths.profileDir && process.env.KUNAI_CREDENTIAL_BACKEND === "file") return;
       noticeFileFallbackOnce({
         configDir: paths.configDir,
+        profileRoot: paths.profileDir !== undefined,
         write: (line) => process.stderr.write(line),
       });
     },

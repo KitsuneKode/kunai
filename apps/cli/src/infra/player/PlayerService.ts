@@ -85,6 +85,19 @@ export type PlayerPlaybackEvent =
       codec?: string;
     }
   | { type: "seek-stalled"; secondsSeeking: number }
+  | {
+      /** Kunai reset sustained A/V drift by seeking to the position already being watched. */
+      type: "avsync-resync";
+      positionSeconds: number;
+      driftSeconds: number;
+      attempt: number;
+    }
+  | {
+      /** Sustained drift survived the bounded recovery budget; mpv continues with ordinary frame dropping. */
+      type: "avsync-recovery-exhausted";
+      reason: "drift-returned" | "budget-exhausted";
+      resyncCount: number;
+    }
   | { type: "player-closing" }
   | { type: "player-closed" }
   | { type: "segment-skipped"; kind: PlaybackSkipKind; automatic: boolean }
@@ -128,6 +141,11 @@ export interface PlayerOptions {
   startAt?: number;
   /** Optional resume offer shown in mpv without automatically seeking. */
   resumePromptAt?: number;
+  /**
+   * The offer exists only for persistent mpv's overlay (the user chose
+   * Restart). A player that cannot prompt starts at `startAt` instead.
+   */
+  resumeOfferOverlayOnly?: boolean;
   /**
    * When false, skips the mpv “resume here vs start over” prompt for this play.
    * Persistent playback only, when resumePromptAt is positive. Default true.

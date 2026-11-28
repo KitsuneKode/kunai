@@ -1,7 +1,7 @@
 import { clearRootContentTransitionFrame } from "@/app-shell/shell-screen-clear";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ReactElement } from "react";
-import { useSyncExternalStore } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
 
 import { resolveRootShellSurface, type RootShellSurface } from "./root-shell-state";
 
@@ -13,6 +13,12 @@ export type RootContentSession = {
   element: ReactElement;
   /** Optional AppHeader pill when kind alone is too vague (e.g. picker → Stats). */
   headerLabel?: string;
+  /**
+   * The content reports this machine's capabilities itself (setup's verdict),
+   * so the shell's capability strip would repeat it and push the frame taller
+   * than the terminal.
+   */
+  ownsMachineVerdict?: boolean;
 };
 
 type MountedRootContent<TResult> = {
@@ -21,6 +27,7 @@ type MountedRootContent<TResult> = {
 };
 
 const rootContentSubscribers = new Set<() => void>();
+let rootInterruptCaptured = false;
 let rootContentSession: RootContentSession | null = null;
 let rootContentNextId = 1;
 
@@ -46,6 +53,21 @@ function notifyRootContentSubscribers() {
 
 export function getRootContentSession(): RootContentSession | null {
   return rootContentSession;
+}
+
+export function isRootInterruptCaptured(): boolean {
+  return rootInterruptCaptured;
+}
+
+/** The mounted view handles Ctrl+C like its other input while it is modal. */
+export function useRootInterruptCapture(active: boolean): void {
+  useLayoutEffect(() => {
+    if (!active) return;
+    rootInterruptCaptured = true;
+    return () => {
+      rootInterruptCaptured = false;
+    };
+  }, [active]);
 }
 
 export function subscribeRootContentSession(subscriber: () => void): () => void {
@@ -200,6 +222,7 @@ export function mountRootContent<TResult>({
   fallbackValue,
   displacedValue,
   headerLabel,
+  ownsMachineVerdict = false,
 }: {
   kind: RootContentKind;
   renderContent: (finish: (value: TResult) => void) => ReactElement;
@@ -207,6 +230,7 @@ export function mountRootContent<TResult>({
   /** Resolves the session if another mount displaces it; defaults to fallbackValue. */
   displacedValue?: TResult;
   headerLabel?: string;
+  ownsMachineVerdict?: boolean;
 }): MountedRootContent<TResult> {
   const sessionId = rootContentNextId++;
   let settled = false;
@@ -251,6 +275,7 @@ export function mountRootContent<TResult>({
     kind,
     element: renderContent(settle),
     ...(headerLabel ? { headerLabel } : null),
+    ownsMachineVerdict,
   });
 
   if (displacedSessionId !== null) {

@@ -23,7 +23,8 @@
  * Isolation contract (enforced, not conventional):
  *  - exactly one live session per process — a second createAgentSession throws;
  *  - env mutations are undone in LIFO order on dispose (storage root, KUNAI_*,
- *    PATH) — never `KUNAI_CONFIG_DIR`, never the developer's real profile;
+ *    PATH) — the session profile is a throwaway root, never the developer's
+ *    real profile;
  *  - dispose order is fixed: settle session loop → unmount Ink → clear
  *    root-content globals → close DBs → undo env → delete profile.
  */
@@ -31,7 +32,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { forceSettleAllRootContent } from "@/app-shell/root-content-state";
-import type { SessionController } from "@/app/session/SessionController";
+import type { SessionBootstrap, SessionController } from "@/app/session/SessionController";
 import type { ShutdownIntent } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
@@ -75,8 +76,13 @@ export interface AgentSessionOptions {
    * one explicit scenario). A record is written verbatim as config.json.
    */
   readonly seed?: AgentSessionSeed;
-  /** `"smoke"` (default) loads fixture providers through the real env gate. */
-  readonly providers?: "smoke" | "none";
+  /**
+   * `"smoke"` (default) loads fixture providers through the real env gate.
+   * `"production"` keeps the fixture catalog but loads the bundled roster, for
+   * surfaces that read real manifests (the provider picker). It is for looking
+   * at providers, never for resolving through them — that would be live network.
+   */
+  readonly providers?: "smoke" | "production" | "none";
   /** `"fake"` PATH-shims the fake mpv so playback flows can run in-process. */
   readonly mpv?: "fake" | "none";
   readonly fakeMpvMode?: "normal" | "fail-pre-loaded" | "hold";
@@ -91,12 +97,17 @@ export interface AgentSessionOptions {
    * a result from a live drive is a dated observation, not a regression proof.
    */
   readonly network?: "off" | "live";
+  /** Bootstrap input for the first session loop, mirroring main.ts startup flags. */
+  readonly bootstrap?: SessionBootstrap;
   /**
    * Seed backend state through the real repositories after the container
    * opens and before the shell mounts, so the first frame reads it — the
    * state a returning user boots into.
    */
-  readonly beforeMount?: (container: Container) => void;
+  readonly beforeMount?: (input: {
+    readonly container: Container;
+    readonly profile: IsolatedCliProfile;
+  }) => void | Promise<void>;
 }
 
 export interface JournalEntry {
@@ -409,6 +420,9 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
         loadCompiledSmokeSearchDefinitions(),
       ]);
     }
+    if (options.providers === "production") {
+      ({ searchServiceDefinitions } = await import(FIXTURE_PROVIDER));
+    }
     container = await createContainer({ providerModulesOverride, searchServiceDefinitions });
     // Mirror main.ts: the rendered shell and the phase loop must read the same
     // loaded profiles, rather than the state manager's constructor placeholders.
@@ -423,8 +437,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       container.config.youtubeProvider,
     );
 
-    options.beforeMount?.(container);
-
+    await options.beforeMount?.({ container, profile });
     const { AppRoot } = await import("@/app-shell/ink-shell");
     handle = render(createElement(AppRoot, { container }), { columns, rows });
   } catch (error) {
@@ -470,8 +483,8 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     if (loopError) throw loopError;
   };
 
-  const startLoop = () => {
-    runPromise = controller.run({}).catch((error) => {
+  const startLoop = (bootstrap: SessionBootstrap = {}) => {
+    runPromise = controller.run(bootstrap).catch((error) => {
       // A failed loop is a finding, not a crash — surface it on the next wait.
       loopError = error instanceof Error ? error : new Error(String(error));
     });
@@ -484,7 +497,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     quitIntent = intent;
     controller.beginShutdown();
   });
-  startLoop();
+  startLoop(options.bootstrap ?? {});
 
   const stopLoop = async () => {
     if (!runPromise) return;

@@ -361,7 +361,14 @@ export function OverlayPanel({
                             selected={selected}
                             accentColor={rowAccentColor}
                             pickerAccent={pickerAccent}
-                            labelColor={option.tone === "error" ? palette.dangerText : undefined}
+                            alignBadgeEnd={overlay.type === "provider"}
+                            // A failing provider is still a choice, not a destructive
+                            // row: its name stays neutral and the badge carries the state.
+                            labelColor={
+                              option.tone === "error" && overlay.type !== "provider"
+                                ? palette.dangerText
+                                : undefined
+                            }
                           />
                         </Text>
                         {isHistoryPicker && option.historyProgress ? (
@@ -390,16 +397,20 @@ export function OverlayPanel({
               />
             ) : null}
           </Box>
-          {overlay.busy || overlay.type !== "episode-picker" ? (
-            overlay.busy ? (
-              <LoadingState message={pickerBusyMessage} framed />
-            ) : (
-              <Box marginTop={1}>
-                <Text color={palette.dim}>
-                  {`${overlay.options.length} items  ·  ↑↓ choose · Enter select · Esc close`}
-                </Text>
-              </Box>
-            )
+          {/*
+            Only the notifications list still carries its keys here. The episode
+            and provider pickers get their count from the context strip and
+            their keys from the shell footer; a second copy was the same hint
+            said twice, with two different counts.
+          */}
+          {overlay.busy ? (
+            <LoadingState message={pickerBusyMessage} framed />
+          ) : overlay.type === "history-picker" ? (
+            <Box marginTop={1}>
+              <Text color={palette.dim}>
+                {`${overlay.options.length} items  ·  ↑↓ choose · Enter select · Esc close`}
+              </Text>
+            </Box>
           ) : null}
         </>
       ) : isLineOverlay && overlay.loading ? (

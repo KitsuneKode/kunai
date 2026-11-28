@@ -162,6 +162,39 @@ describe("VlcPlayerService", () => {
     expect(h.vlc.argv().some((arg) => arg.includes("password"))).toBe(false);
   });
 
+  test("a resume offer VLC cannot prompt for becomes its start position", async () => {
+    const h = harness((step) => status({ position: step, length: 1400, displayed: step * 20 }));
+    const playing = h.service.play(STREAM, {
+      ...h.options,
+      startAt: 0,
+      resumePromptAt: 612,
+      resumeStartChoicePrompt: true,
+    });
+    await h.vlc.spawned;
+
+    expect(h.vlc.argv()).toContain(":start-time=612");
+
+    await h.vlc.exit(0);
+    await playing;
+  });
+
+  test("an explicit start position wins over VLC's resume offer", async () => {
+    const h = harness((step) => status({ position: step, length: 1400, displayed: step * 20 }));
+    const playing = h.service.play(STREAM, {
+      ...h.options,
+      startAt: 44,
+      resumePromptAt: 612,
+      resumeStartChoicePrompt: true,
+    });
+    await h.vlc.spawned;
+
+    expect(h.vlc.argv()).toContain(":start-time=44");
+    expect(h.vlc.argv()).not.toContain(":start-time=612");
+
+    await h.vlc.exit(0);
+    await playing;
+  });
+
   test("a video stream with no pictures never starts and reports video-not-decoding", async () => {
     // VLC without an H.264 decoder: the video stream is listed, audio plays,
     // displayedpictures stays 0.

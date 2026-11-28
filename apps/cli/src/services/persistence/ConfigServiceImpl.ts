@@ -43,12 +43,17 @@ import {
   normalizeHdrMode,
   normalizeMaxConcurrentDownloads,
   normalizeModePatch,
+  normalizeMpvHwdec,
   normalizeMpvReconnectAttempts,
+  normalizeOptionalSecret,
   normalizePrePlayConfirm,
   normalizeProviderDns,
   normalizeRecoveryMode,
   normalizeRunwayTarget,
   normalizeStartupPriority,
+  normalizeStringList,
+  normalizeVideasySessionExpiresAt,
+  isExpiredVideasySession,
 } from "./config-scalar-normalizers";
 import {
   collectDirtyVaultFields,
@@ -331,6 +336,8 @@ export class ConfigServiceImpl implements ConfigService {
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
       providerDns: normalizeProviderDns(loaded.providerDns),
       hdrMode: normalizeHdrMode(loaded.hdrMode),
+      mpvHwdec: normalizeMpvHwdec(loaded.mpvHwdec),
+      mpvAvsyncRecovery: loaded.mpvAvsyncRecovery !== false,
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
@@ -736,10 +743,6 @@ export class ConfigServiceImpl implements ConfigService {
     return [...this.config.youtubeProviderPriority];
   }
 
-  get youtubeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.youtubeLanguageProfile;
-  }
-
   get youtubeMetadata(): KitsuneConfig["youtubeMetadata"] {
     return { ...this.config.youtubeMetadata };
   }
@@ -813,6 +816,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get movieLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
     return this.sessionOverrides.movieLanguageProfile ?? this.config.movieLanguageProfile;
+  }
+
+  get youtubeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
+    return this.sessionOverrides.youtubeLanguageProfile ?? this.config.youtubeLanguageProfile;
   }
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
@@ -972,6 +979,14 @@ export class ConfigServiceImpl implements ConfigService {
   }
   get hdrMode(): KitsuneConfig["hdrMode"] {
     return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
+  }
+
+  get mpvHwdec(): KitsuneConfig["mpvHwdec"] {
+    return this.sessionOverrides.mpvHwdec ?? this.config.mpvHwdec;
+  }
+
+  get mpvAvsyncRecovery(): boolean {
+    return this.sessionOverrides.mpvAvsyncRecovery ?? this.config.mpvAvsyncRecovery;
   }
 
   get offlineArtworkCacheEnabled(): boolean {
@@ -1174,17 +1189,16 @@ export class ConfigServiceImpl implements ConfigService {
         }
       }
       partial[key] = persisted;
-      if (keptAny) {
-        const effective: import("./ConfigService").MediaLanguageProfile = { ...persisted };
-        for (const field of PROFILE_FIELDS) {
-          if (override[field] !== saved[field] && incoming[field] === override[field]) {
-            const value = override[field];
-            if (value === undefined) delete effective[field];
-            else effective[field] = value;
-          }
+      if (!keptAny) continue;
+      const effective: import("./ConfigService").MediaLanguageProfile = { ...persisted };
+      for (const field of PROFILE_FIELDS) {
+        if (override[field] !== saved[field] && incoming[field] === override[field]) {
+          const value = override[field];
+          if (value === undefined) delete effective[field];
+          else effective[field] = value;
         }
-        keptProfileOverrides[key] = effective;
       }
+      keptProfileOverrides[key] = effective;
     }
     return { partial, keptProfileOverrides };
   }
@@ -1397,32 +1411,6 @@ export class ConfigServiceImpl implements ConfigService {
   }
 }
 
-function normalizeStringList<T>(values: T): readonly string[] {
-  if (!Array.isArray(values)) return [];
-  return [
-    ...new Set(
-      values
-        .filter(isJsonString)
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
-  ];
-}
-
-function normalizeOptionalSecret<T>(value: T): string {
-  return isJsonString(value) ? value.trim() : "";
-}
-
-function normalizeVideasySessionExpiresAt<T, U>(value: T, token?: U): number {
-  const expiresAt = typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
-  if (!normalizeOptionalSecret(token)) return 0;
-  return isExpiredVideasySession(expiresAt) ? 0 : expiresAt;
-}
-
-function isExpiredVideasySession(expiresAt: number): boolean {
-  return expiresAt > 0 && expiresAt <= Date.now();
-}
-
 function retiredProductionProviderFieldSlice(
   config: KitsuneConfig,
 ): ReturnType<typeof normalizeRetiredProductionProviderFields> {
@@ -1475,6 +1463,7 @@ const SESSION_PROFILE_KEYS = [
   "animeLanguageProfile",
   "seriesLanguageProfile",
   "movieLanguageProfile",
+  "youtubeLanguageProfile",
 ] as const;
 const PROFILE_FIELDS = ["audio", "subtitle", "quality"] as const;
 

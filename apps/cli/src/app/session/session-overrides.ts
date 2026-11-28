@@ -1,4 +1,4 @@
-import type { HdrMode, MediaLanguageProfile } from "@kunai/config";
+import type { HdrMode, MediaLanguageProfile, MpvHwdecMode } from "@kunai/config";
 
 /**
  * Pure resolution of transient, in-memory config overrides a launch flag should
@@ -17,6 +17,8 @@ export interface SessionOverrideArgs {
   readonly audio?: string;
   readonly subtitle?: string;
   readonly hdr?: HdrMode;
+  readonly mpvHwdec?: MpvHwdecMode;
+  readonly mpvAvsyncRecovery?: boolean;
 }
 
 export interface SessionLayoutConfig {
@@ -25,9 +27,12 @@ export interface SessionLayoutConfig {
   readonly plainMode?: boolean;
   readonly offlineMode?: boolean;
   readonly hdrMode?: HdrMode;
+  readonly mpvHwdec?: MpvHwdecMode;
+  readonly mpvAvsyncRecovery?: boolean;
   readonly animeLanguageProfile: MediaLanguageProfile;
   readonly seriesLanguageProfile: MediaLanguageProfile;
   readonly movieLanguageProfile: MediaLanguageProfile;
+  readonly youtubeLanguageProfile: MediaLanguageProfile;
 }
 
 export type SessionConfigOverrides = Partial<{
@@ -36,15 +41,19 @@ export type SessionConfigOverrides = Partial<{
   plainMode: boolean;
   offlineMode: boolean;
   hdrMode: HdrMode;
+  mpvHwdec: MpvHwdecMode;
+  mpvAvsyncRecovery: boolean;
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;
+  youtubeLanguageProfile: MediaLanguageProfile;
 }>;
 
 const LANGUAGE_LANES = [
   "animeLanguageProfile",
   "seriesLanguageProfile",
   "movieLanguageProfile",
+  "youtubeLanguageProfile",
 ] as const;
 
 /**
@@ -52,11 +61,13 @@ const LANGUAGE_LANES = [
  * `--minimal` enables minimal mode (companion-pane collapse, minimal footer, dim
  * header). `--zen` implies minimal upstream in cli-args, so a zen launch yields
  * both. `--quality`/`--audio`/`--sub` ride the per-lane language profiles for
- * this session — the same fields the Settings rows write, applied to all three
- * provider lanes because a per-run pick should not care which lane the chosen
- * title resolves into. YouTube is untouched: its quality vocabulary and track
- * model are yt-dlp-shaped, not provider-shaped. Already-matching fields are
- * omitted so we never issue a no-op update.
+ * this session — the same fields the Settings rows write, applied to all four
+ * media profiles because a per-run pick should not care which lane the chosen
+ * title resolves into, including YouTube: its resolver accepts the same quality
+ * ceiling labels, while audio/subtitle preferences reach yt-dlp/mpv through the
+ * profile. cli-args rejects values outside the shared vocabularies before this
+ * runs, so an unsupported value can never be silently dropped here.
+ * Already-matching fields are omitted so we never issue a no-op update.
  */
 export function resolveSessionConfigOverrides(
   args: SessionOverrideArgs,
@@ -68,6 +79,12 @@ export function resolveSessionConfigOverrides(
   if (args.plain && !config.plainMode) overrides.plainMode = true;
   if (args.offline && !config.offlineMode) overrides.offlineMode = true;
   if (args.hdr !== undefined && args.hdr !== config.hdrMode) overrides.hdrMode = args.hdr;
+  if (args.mpvHwdec !== undefined && args.mpvHwdec !== config.mpvHwdec) {
+    overrides.mpvHwdec = args.mpvHwdec;
+  }
+  if (args.mpvAvsyncRecovery !== undefined && args.mpvAvsyncRecovery !== config.mpvAvsyncRecovery) {
+    overrides.mpvAvsyncRecovery = args.mpvAvsyncRecovery;
+  }
 
   if (args.quality !== undefined || args.audio !== undefined || args.subtitle !== undefined) {
     for (const lane of LANGUAGE_LANES) {

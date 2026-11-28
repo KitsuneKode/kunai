@@ -275,3 +275,43 @@ Queue downloads from playback or details.
 No watch history yet
 Start watching and progress will appear here.
 ```
+
+## Consistency Rules (Shell v4)
+
+Every surface in Kunai uses the same four grammars. Do not invent surface-local loading spinners, custom error layouts, decorative empty footers, or ambiguous focus treatments.
+
+### 1. One Loading Grammar
+
+- **Header:** status switches to `◌ <verb>…` (never `● ready` while loading or resolving; never `● Searching…` once settled).
+- **Body:** one `LoadingState` / `SakuraLoader` line (`❀ <Verb> <specific target>…`, static `❀` under reduced motion, `Loading: <Verb> <target>…` in `--plain`). Reserve the full content region height so completion never jumps layout.
+- **Stage rail (multi-step waits only):** vertical checklist (`✓ done`, `◓ active`, `· pending`) strictly synced to the current headline — never show a stage rail behind the headline.
+- **Plain / screen-reader quietness:** suppress 1-second elapsed ticks and polling redraws in `--plain`; emit milestone transitions only (start, 5s wait, 15s stall warning, settled) and never clear the full screen on keypress.
+- **Escape hatch:** every cancellable load advertises `[esc] cancel` once in `ShellFooter` — never duplicated in the footer task line.
+
+### 2. One Error Grammar
+
+- **Static, never animated:** stop all spinners/blooms the instant an error renders.
+- **Header:** status switches to `● issue` (or `● offline` when network is down) in `dangerText` / `warn` — never `● ready`.
+- **Three-part body (`StateBlock kind="error"`):**
+  1. **What happened:** `× <Plain-language failure>` in `dangerText` (`Error: <failure>` in `--plain`).
+  2. **Why & what was preserved:** one muted line naming the cause and confirming safe state (e.g., `Progress saved at 14:22 · not marked watched`, or `Local library still works`). Never dump raw stack traces, tokens, or URLs.
+  3. **The one next key:** one accented primary action row (`▌ ↵ <Safe recovery verb>`) matching the primary footer chip (e.g., `[r] retry`, `[r] recover`, `[o] switch source`). Diagnostics stay behind `[d]` — never primary.
+- **Footer:** switches to recovery-only chips (`[r] retry`, `[esc] back`, `[/] commands`) — never leave stale browse or playback chips below an error.
+
+### 3. One Empty-State Grammar
+
+- **Two-part body (`StateBlock kind="empty"`):**
+  1. **What is empty:** `· <Specific noun>` (`Empty: <Specific noun>` in `--plain`).
+  2. **Why + the one next action:** one muted line naming the exact action that creates data (`Press /trending to browse popular titles`, `Enable downloads in Settings → Playback to save offline`).
+- **No self-contradicting copy:** if actionable rows already exist on the screen (e.g., `For you now` on Browse home), do not render a competing `"empty for now"` / `"this one's bare"` mascot line above them.
+- **Honest footer:** when a list has 0 rows, omit row-scoped verbs (`[enter] resume`, `[m] actions`, `[x] delete`, `[q] up next`, `[J/K] reorder`). Keep only live actions for the empty surface (e.g., `[tab] switch tab`, `[esc] back`, `[/] commands`).
+
+### 4. One Focus-Owner Grammar
+
+Exactly **one** region owns keyboard focus at any instant, and the terminal shows who owns it without making the user read the footer:
+
+- **Text input focused:** rose `⌕` icon, rose underline/rule, visible block cursor (in `--plain`: `<Label> (focused): <value>` with explicit `(empty — placeholder: …)` so placeholders never read as typed text). Any visible list below drops its `▌` bar and dims.
+- **List or action rows focused:** active row owns the leading `▌` bar at column 0 (never after an initials tile) plus `accentFill` band (`[selected]` plus a single `Focus: <region> (N of M)` line in `--plain`). Inactive inputs dim to `›` with a muted rule.
+- **Home / Browse quick-pick handoff:** when Browse home has `For you now` rows and the query is empty, show a quiet `↓` affordance right on the `For you now` section header (`For you now  ·  ↓ to pick`) and let `↓` transfer the `▌` bar visibly onto row 1 while dimming the search bar — never leave the home row looking half-selected or unreachable.
+- **Two-pane surfaces (Tracks, Settings, Calendar):** the focused pane owns `▌` + `accentFill`; the passive pane keeps a quiet `▸` / muted selection marker without a second `▌`. Always show the pane-switch key (`[←→] pane` or `[tab] section`) in `ShellFooter`.
+- **Armed destructive confirmation (`ConfirmStrip`):** confirmation always takes focus in one fixed strip above the footer (`⚠ <Verb> <exact target>?`), switches `ShellFooter` exclusively to `[y] confirm <verb>` and `[esc] cancel`, and sits at the top of the Esc stack (`confirm` → `filter` → `submenu` → `overlay` → `surface`). No surface mixes double-press `x` with `y/Esc`.

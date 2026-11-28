@@ -69,6 +69,7 @@ function createHarness(
   let resolveExit!: (code: number) => void;
   const commands: unknown[][] = [];
   const argv: string[] = [];
+  let spawnCount = 0;
   const proc = {
     exited: new Promise<number>((resolve) => {
       resolveExit = resolve;
@@ -100,6 +101,7 @@ function createHarness(
   const runtime: PersistentMpvSessionRuntime = {
     which: () => "/usr/bin/mpv",
     spawn: (command) => {
+      spawnCount += 1;
       argv.push(...command);
       return proc;
     },
@@ -116,6 +118,7 @@ function createHarness(
     runtime,
     argv,
     commands,
+    spawnCount: () => spawnCount,
     callbacks: () => callbacks,
     endProcess(code = 0) {
       proc.exitCode = code;
@@ -2198,4 +2201,381 @@ test("verified local-library subtitles retain their startup path", async () => {
     harness.endProcess();
     await session.close();
   }
+});
+
+describe("PersistentMpvSession avsync drift recovery", () => {
+  function drivePlaybackOutput(
+    harness: ReturnType<typeof createHarness>,
+    positionSeconds = 100,
+    observedAt = 2,
+  ) {
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt });
+    harness
+      .callbacks()
+      .onPropertyUpdate({ name: "vo-configured", value: true, observedAt: observedAt + 1 });
+    harness
+      .callbacks()
+      .onPropertyUpdate({ name: "time-pos", value: positionSeconds, observedAt: observedAt + 2 });
+  }
+
+  async function createAvsyncSession(
+    harness: ReturnType<typeof createHarness>,
+    options: {
+      avsyncRecovery?: boolean;
+      live?: boolean;
+      startOutput?: boolean;
+      onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+    } = {},
+  ) {
+    const session = await PersistentMpvSession.create({
+      stream: createStream({
+        url: `https://video.example/${options.live ? "live" : "vod"}-avsync.m3u8`,
+        isLive: options.live === true,
+      }),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        ...(options.avsyncRecovery !== undefined
+          ? { avsyncRecovery: options.avsyncRecovery }
+          : null),
+        ...(options.onPlaybackEvent ? { onPlaybackEvent: options.onPlaybackEvent } : null),
+      },
+      // SAFETY: the session reads only these playback-recovery keys in this
+      // harness; the rest of the persisted config shape is intentionally absent.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady() {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    if (options.startOutput !== false) drivePlaybackOutput(harness);
+    await flushAsyncWork();
+    return session;
+  }
+
+  function seekCommands(harness: ReturnType<typeof createHarness>) {
+    return harness.commands.filter((command) => command[0] === "seek");
+  }
+
+  test("sustained drift past 300ms across three samples seeks once to the current position", async () => {
+    let now = 20_000;
+    const harness = createHarness();
+    harness.runtime.now = () => now;
+    const playbackEvents: PlayerPlaybackEvent[] = [];
+    const session = await createAvsyncSession(harness, {
+      onPlaybackEvent: (event) => playbackEvents.push(event),
+    });
+    now = 21_100;
+    try {
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_100 });
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: -0.41, observedAt: 21_200 });
+      expect(seekCommands(harness)).toEqual([]);
+
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.35, observedAt: 21_400 });
+      await waitFor(() => seekCommands(harness).length === 1);
+      expect(seekCommands(harness)).toEqual([["seek", 100, "absolute"]]);
+      expect(playbackEvents).toContainEqual({
+        type: "avsync-resync",
+        positionSeconds: 100,
+        driftSeconds: 0.35,
+        attempt: 1,
+      });
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("pause, seeking, live playback, and the off switch suppress recovery", async () => {
+    for (const scenario of ["paused", "seeking", "live", "off"] as const) {
+      let now = 20_000;
+      const harness = createHarness();
+      harness.runtime.now = () => now;
+      const session = await createAvsyncSession(harness, {
+        avsyncRecovery: scenario === "off" ? false : undefined,
+        live: scenario === "live",
+      });
+      now = 21_100;
+      try {
+        if (scenario === "paused") {
+          harness.callbacks().onPropertyUpdate({ name: "pause", value: true, observedAt: 4 });
+        }
+        if (scenario === "seeking") {
+          harness.callbacks().onPropertyUpdate({ name: "seeking", value: true, observedAt: 4 });
+        }
+        for (const observedAt of [21_100, 21_200, 21_400]) {
+          harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+        }
+        await flushAsyncWork();
+        expect(seekCommands(harness)).toEqual([]);
+        now += 1;
+      } finally {
+        harness.endProcess();
+        await session.close();
+      }
+    }
+  });
+
+  test("drift returning soon after a resync gives up instead of seek looping", async () => {
+    let now = 20_000;
+    const harness = createHarness();
+    harness.runtime.now = () => now;
+    const session = await createAvsyncSession(harness);
+    now = 21_100;
+    try {
+      for (const observedAt of [21_100, 21_200, 21_400]) {
+        harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+      }
+      await waitFor(() => seekCommands(harness).length === 1);
+      await flushAsyncWork();
+
+      now = 22_100;
+      for (const observedAt of [22_100, 22_200, 22_400]) {
+        harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+      }
+      await flushAsyncWork();
+      expect(seekCommands(harness)).toHaveLength(1);
+
+      now = 27_100;
+      for (const observedAt of [27_100, 27_200, 27_400]) {
+        harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+      }
+      await flushAsyncWork();
+      expect(seekCommands(harness)).toEqual([["seek", 100, "absolute"]]);
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("output-start grace survives a delayed network first frame", async () => {
+    let now = 20_000;
+    const harness = createHarness();
+    harness.runtime.now = () => now;
+    const session = await createAvsyncSession(harness, { startOutput: false });
+    try {
+      // Spawn/episode creation is 1.5 s behind us, but mpv has only now produced
+      // output after the slow network startup. The grace must start here.
+      now = 21_500;
+      drivePlaybackOutput(harness);
+      await flushAsyncWork();
+
+      now = 21_600;
+      for (const observedAt of [21_600, 21_700, 21_900]) {
+        harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+      }
+      await flushAsyncWork();
+      expect(seekCommands(harness)).toEqual([]);
+
+      now = 22_600;
+      for (const observedAt of [22_600, 22_700, 22_900]) {
+        harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+      }
+      await waitFor(() => seekCommands(harness).length === 1);
+      expect(seekCommands(harness)).toEqual([["seek", 100, "absolute"]]);
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a second play on the reused persistent session restores the recovery budget", async () => {
+    let now = 20_000;
+    const harness = createHarness();
+    harness.runtime.now = () => now;
+    const playbackEvents: PlayerPlaybackEvent[] = [];
+    const session = await createAvsyncSession(harness, {
+      onPlaybackEvent: (event) => playbackEvents.push(event),
+    });
+    try {
+      const drift = (at: number) => {
+        for (const observedAt of [at, at + 100, at + 300]) {
+          harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+        }
+      };
+
+      now = 21_000;
+      drift(21_000);
+      await waitFor(() => seekCommands(harness).length === 1);
+      await flushAsyncWork();
+      now = 27_000;
+      drift(27_000);
+      await waitFor(() => seekCommands(harness).length === 2);
+      await flushAsyncWork();
+      now = 33_000;
+      drift(33_000);
+      await flushAsyncWork();
+      expect(seekCommands(harness)).toHaveLength(2);
+      expect(playbackEvents).toContainEqual({
+        type: "avsync-recovery-exhausted",
+        reason: "budget-exhausted",
+        resyncCount: 2,
+      });
+
+      const firstPlayback = session.waitForCurrentPlayback();
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 33_500 });
+      await firstPlayback;
+
+      const secondPlayback = session.play(
+        createStream({ url: "https://video.example/episode-2.m3u8" }),
+        {
+          displayTitle: "Episode 2",
+          primarySubtitle: null,
+          onPlaybackEvent: (event) => playbackEvents.push(event),
+        },
+      );
+      await waitFor(() =>
+        harness.commands.some(
+          (command) =>
+            command[0] === "loadfile" && command[1] === "https://video.example/episode-2.m3u8",
+        ),
+      );
+      harness.callbacks().onFileLoaded?.({ observedAt: 34_000 });
+      drivePlaybackOutput(harness, 200, 34_100);
+      await flushAsyncWork();
+
+      now = 35_400;
+      drift(35_400);
+      await waitFor(() => seekCommands(harness).length === 3);
+      expect(seekCommands(harness).at(-1)).toEqual(["seek", 200, "absolute"]);
+      expect(harness.spawnCount()).toBe(1);
+      const resyncEvents = playbackEvents.filter((event) => event.type === "avsync-resync");
+      expect(resyncEvents).toHaveLength(3);
+      expect(resyncEvents.at(-1)).toMatchObject({ attempt: 1, positionSeconds: 200 });
+
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 36_000 });
+      await secondPlayback;
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("starting core-idle clears stale drift evidence and requires a fresh window", async () => {
+    let now = 20_000;
+    const harness = createHarness();
+    harness.runtime.now = () => now;
+    const session = await createAvsyncSession(harness);
+    now = 21_100;
+    try {
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_100 });
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_200 });
+      harness.callbacks().onPropertyUpdate({ name: "core-idle", value: true, observedAt: 21_250 });
+      harness.callbacks().onPropertyUpdate({ name: "core-idle", value: false, observedAt: 21_300 });
+
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_400 });
+      await flushAsyncWork();
+      expect(seekCommands(harness)).toEqual([]);
+
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_500 });
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_700 });
+      await waitFor(() => seekCommands(harness).length === 1);
+      expect(seekCommands(harness)).toEqual([["seek", 100, "absolute"]]);
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("zero-position drift never charges the recovery budget before playback can seek", async () => {
+    let now = 20_000;
+    const harness = createHarness();
+    harness.runtime.now = () => now;
+    const playbackEvents: PlayerPlaybackEvent[] = [];
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/zero-position-avsync.m3u8" }),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => playbackEvents.push(event),
+      },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady() {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    drivePlaybackOutput(harness, 0);
+    await flushAsyncWork();
+
+    try {
+      for (const at of [21_000, 27_000]) {
+        now = at;
+        for (const observedAt of [at, at + 100, at + 300]) {
+          harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+        }
+        await flushAsyncWork();
+      }
+      expect(seekCommands(harness)).toEqual([]);
+      expect(playbackEvents.filter((event) => event.type === "avsync-resync")).toEqual([]);
+
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 32_900 });
+      now = 33_000;
+      for (const observedAt of [33_000, 33_100, 33_300]) {
+        harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+      }
+      await waitFor(() => seekCommands(harness).length === 1);
+      expect(seekCommands(harness)).toEqual([["seek", 100, "absolute"]]);
+      expect(playbackEvents).toContainEqual({
+        type: "avsync-resync",
+        positionSeconds: 100,
+        driftSeconds: 0.5,
+        attempt: 1,
+      });
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a non-finite drift sample resets the sustained-drift evidence", async () => {
+    let now = 20_000;
+    const harness = createHarness();
+    harness.runtime.now = () => now;
+    const session = await createAvsyncSession(harness);
+    now = 21_100;
+    try {
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_100 });
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_200 });
+      harness
+        .callbacks()
+        .onPropertyUpdate({ name: "avsync", value: "unavailable", observedAt: 21_300 });
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_400 });
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_500 });
+      await flushAsyncWork();
+      expect(seekCommands(harness)).toEqual([]);
+
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_600 });
+      await flushAsyncWork();
+      expect(seekCommands(harness)).toEqual([]);
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 21_800 });
+      await waitFor(() => seekCommands(harness).length === 1);
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("retired sessions ignore late avsync property events", async () => {
+    let now = 20_000;
+    const harness = createHarness();
+    harness.runtime.now = () => now;
+    const session = await createAvsyncSession(harness);
+    harness.endProcess();
+    await session.close();
+    const commandCount = harness.commands.length;
+
+    for (const observedAt of [1_000, 1_100, 1_300]) {
+      harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt });
+    }
+    await flushAsyncWork();
+    expect(harness.commands).toHaveLength(commandCount);
+    expect(seekCommands(harness)).toEqual([]);
+  });
 });

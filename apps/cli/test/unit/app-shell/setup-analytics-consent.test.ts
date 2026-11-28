@@ -8,6 +8,7 @@ import { FACTORY_INITIAL_STATE, type SetupFlowPayload } from "@/app-shell/setup-
 import { runSetupWizard } from "@/app-shell/workflows/setup-workflows";
 import type { Container } from "@/container";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
+import type { CapabilitySnapshot, probeCapabilities } from "@/ui";
 import { DEFAULT_CONFIG } from "@kunai/config";
 
 import { applyStorageRootEnv } from "../../helpers/storage-env";
@@ -45,6 +46,9 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
   const notes: string[] = [];
   const container = {
     config: {
+      get mpvHwdec() {
+        return config.mpvHwdec;
+      },
       getRaw: () => ({ ...config }),
       update: async (patch: Partial<typeof config>) => {
         Object.assign(config, patch);
@@ -53,6 +57,9 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
     },
     capabilitySnapshot: {
       mpv: true,
+      mpvRequired: true,
+      vlc: true,
+      vlcRequired: false,
       ffprobe: true,
       ytDlp: true,
       curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -113,11 +120,131 @@ const UNTOUCHED_PREFS = {
   presenceDiscord: false,
 } as const;
 
+test("setup probes the selected player mode on first paint and on dependency recheck", async () => {
+  const probeCalls: Array<Parameters<typeof probeCapabilities>[0] | undefined> = [];
+  let recheck: (() => Promise<CapabilitySnapshot>) | undefined;
+  const snapshot = {
+    mpv: false,
+    vlc: true,
+    mpvRequired: false,
+    vlcRequired: true,
+    ffprobe: true,
+    ytDlp: true,
+    curl: { present: true, impersonates: true, profile: "chrome150" },
+    mpvHardwareAccel: {
+      probed: false,
+      drivers: [],
+      autoSafeOk: false,
+      autoSafeDriver: "",
+      status: "mpv-not-found",
+      probedAt: null,
+      fromCache: false,
+    },
+    image: {
+      terminal: "unknown",
+      protocol: "none",
+      renderer: "none",
+      available: false,
+      reason: "test fixture",
+    },
+    issues: [],
+  } as const;
+  const { container } = fakeContainer({
+    capabilitySnapshot: null,
+    playerMode: { kind: "managed-vlc" },
+  });
+
+  const outcome = await runSetupWizard({
+    container,
+    force: true,
+    probeCapabilities: async (options) => {
+      probeCalls.push(options);
+      return snapshot;
+    },
+    runSetupFlow: (_probedSnapshot, options) => {
+      recheck = options.onRecheck;
+      return {
+        result: Promise.resolve({
+          flow: options.flow ?? "full",
+          outcome: "aborted",
+          prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
+          answeredScreens: 0,
+        }),
+      };
+    },
+  });
+
+  expect(outcome).toBe("cancelled");
+  expect(probeCalls[0]?.playerMode).toEqual({ kind: "managed-vlc" });
+  await recheck?.();
+  expect(probeCalls.map((call) => call?.playerMode)).toEqual([
+    { kind: "managed-vlc" },
+    { kind: "managed-vlc" },
+  ]);
+});
+
+test("setup overlays the current decoder mode onto a reused startup snapshot", async () => {
+  const reusedSnapshot = {
+    mpv: true,
+    mpvRequired: true,
+    vlc: true,
+    vlcRequired: false,
+    ffprobe: true,
+    ytDlp: true,
+    curl: { present: true, impersonates: true, profile: "chrome150" },
+    mpvHardwareAccel: {
+      probed: true,
+      drivers: ["vaapi", "nvdec"],
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+      status: "hardware",
+      probedAt: 123,
+      fromCache: true,
+    },
+    mpvHwdecMode: "mpv-default",
+    image: {
+      terminal: "unknown",
+      protocol: "none",
+      renderer: "none",
+      available: false,
+      reason: "test fixture",
+    },
+    issues: [],
+  } as const;
+  const { container, config } = fakeContainer({ capabilitySnapshot: reusedSnapshot });
+  config.mpvHwdec = "auto";
+  let flowSnapshot: CapabilitySnapshot | undefined;
+
+  const outcome = await runSetupWizard({
+    container,
+    force: true,
+    probeCapabilities: async () => {
+      throw new Error("a reused startup snapshot must not probe again on setup paint");
+    },
+    runSetupFlow: (snapshot, options) => {
+      flowSnapshot = snapshot;
+      return {
+        result: Promise.resolve({
+          flow: options.flow ?? "full",
+          outcome: "aborted",
+          prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
+          answeredScreens: 0,
+        }),
+      };
+    },
+  });
+
+  expect(outcome).toBe("cancelled");
+  expect(flowSnapshot?.mpvHwdecMode).toBe("auto");
+  expect(flowSnapshot?.mpvHardwareAccel).toEqual(reusedSnapshot.mpvHardwareAccel);
+});
+
 test("aborting a forced setup rerun preserves an existing analytics opt-in", async () => {
   const { container, config } = fakeContainer();
 
   const pending = runSetupWizard({ container, force: true });
   const payload: SetupFlowPayload = {
+    flow: "full",
     outcome: "aborted",
     prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
     answeredScreens: 0,
@@ -137,6 +264,7 @@ test("accepting recommended defaults without reaching consent leaves an opt-in a
 
   const pending = runSetupWizard({ container, force: true });
   const payload: SetupFlowPayload = {
+    flow: "full",
     outcome: "defaults",
     prefs: { ...UNTOUCHED_PREFS, downloadsEnabled: true, analyticsChoice: "unchanged" },
     answeredScreens: 0,
@@ -174,6 +302,7 @@ test("a fresh install that never reaches consent stays unset, with no install id
   const pending = runSetupWizard({ container, force: true });
   expect(
     forceCloseRootContent({
+      flow: "full",
       outcome: "defaults",
       prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
       answeredScreens: 0,

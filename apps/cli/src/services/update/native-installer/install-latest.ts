@@ -37,9 +37,11 @@ import {
   type FetchLike,
 } from "./download";
 import {
+  canActivateProfileVersion,
   DEFAULT_DL_BASE,
   getInstallLayoutPaths,
   removeStagingAndPruneParents,
+  sameInstallLauncherPath,
   stagingDirForVersion,
   versionBinaryPath,
   type InstallLayoutPaths,
@@ -124,6 +126,9 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
       : parseCanonicalVersion((await fetchLatestVersion(fetchImpl)) ?? "");
   if (!resolved) {
     return { status: "failed", error: "Could not resolve target version." };
+  }
+  if (!canActivateProfileVersion(layout, resolved)) {
+    return { status: "failed", error: "Windows profile installs require Kunai 0.4.0 or later." };
   }
 
   const { os, arch } = detectPlatform();
@@ -346,21 +351,26 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           artifactSizeBytes = downloaded.sizeBytes;
         }
 
-        await mkdir(dirname(versionPath), { recursive: true });
-        await atomicInstallBinaryFromFile(stagedBinary, versionPath);
-
-        await writeInstalledVersionMetadata(layout, {
-          schemaVersion: 1,
-          version: resolved,
-          target: releaseTarget?.id ?? `${os}-${arch}`,
-          artifactName: assetName,
-          artifactSha256,
-          sizeBytes: artifactSizeBytes,
-          sourceUrl: downloadUrl,
-          ...archiveProvenance,
-          verification: "release-checksum",
-          installedAt: new Date().toISOString(),
-        });
+        const publishVersion = async () => {
+          await mkdir(dirname(versionPath), { recursive: true });
+          await atomicInstallBinaryFromFile(stagedBinary, versionPath);
+          await writeInstalledVersionMetadata(layout, {
+            schemaVersion: 1,
+            version: resolved,
+            target: releaseTarget?.id ?? `${os}-${arch}`,
+            artifactName: assetName,
+            artifactSha256,
+            sizeBytes: artifactSizeBytes,
+            sourceUrl: downloadUrl,
+            ...archiveProvenance,
+            verification: "release-checksum",
+            installedAt: new Date().toISOString(),
+          });
+        };
+        // Inside a profile, publication waits until the activation lock has
+        // verified the manifest's launcher — a foreign profile must not gain
+        // a payload it will refuse.
+        if (layout.profileDir === undefined) await publishVersion();
 
         const activated = await withActivationLock(layout, resolved, async () => {
           // Another version may have activated while this version downloaded.
@@ -384,7 +394,22 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
               return { status: "superseded" as const, activeVersion };
             }
           }
-          const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
+          // Inside a profile the configured launcher is authoritative; a
+          // manifest pointing elsewhere is refused rather than trusted.
+          if (
+            layout.profileDir !== undefined &&
+            activeManifest !== null &&
+            !sameInstallLauncherPath(activeManifest.launcherPath, layout.launcherPath)
+          ) {
+            throw new Error(
+              `install.json launcher ${activeManifest.launcherPath} disagrees with the profile's configured launcher ${layout.launcherPath}`,
+            );
+          }
+          if (layout.profileDir !== undefined) await publishVersion();
+          const launcherPath =
+            layout.profileDir !== undefined
+              ? layout.launcherPath
+              : (activeManifest?.launcherPath ?? layout.launcherPath);
           const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
           let preserveSnapshot = false;
 
@@ -392,6 +417,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
             await updateLauncher({
               launcherPath,
               versionPath,
+              profileVersion: layout.profileDir === undefined ? undefined : resolved,
             });
             await writeInstallManifestUnderActivation(
               {

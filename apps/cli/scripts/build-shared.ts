@@ -525,20 +525,74 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // 3,323,126 bytes; 3247 KiB leaves 1,802.
 // Main after #845 measured 3,324,798 bytes. Next up on the home row (one
 // release-backed next-episode rule for the row, `--continue`, History and
-// Calendar, plus the successor auto-launch) measured 3,325,627 bytes, +829.
-// Shell-v4 narrow browse/palette/playback layout on top measured 3,327,248
-// bytes. Extracting the browse opener, browse display context, and shared
-// screen/timestamp helpers first shrank the large shell files rather than
-// copying them; the remaining growth is narrow footer density, palette row
-// accounting, and playback/browse chrome policy. Tracks panel recovery grammar
-// (wide values, pane cue, narrow section tabs, compact failure causes, and
-// singleton facts) measured 3,330,345 bytes. The clean details-sheet overlay
-// (framed poster fallback, explicit recovery footer, and artifact-clearing
-// transition) measured 3,331,426 bytes.
-// Merged with next-up, the combined tree measured 3,332,234 bytes. 3255 KiB
-// is the smallest whole-KiB raise over that measurement and leaves 886 bytes;
-// public launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_255;
+// Calendar, plus the successor auto-launch) measured 3,325,627 bytes, +829;
+// 3249 KiB leaves 1,349. No dependency or asset.
+// The 2026-11-27 provider live-audit repair (Rivestream wrapper unwrapping,
+// HLS inventory expansion and backend demotion, plus the AllManga rotation
+// profile) measured 3,328,718 bytes after merging next-up and scoped stream
+// refusal evidence: +3,091 over that merged tree. No dependency or asset.
+// 3251 KiB leaves 306 bytes; public launcher budgets are unchanged.
+// Recording the failing redirect hop on probe errors (so refusal evidence
+// names the host that failed) measured 3,329,213 bytes: +495. No dependency
+// or asset. 3252 KiB leaves 835 bytes.
+// The pre-release player-capability rule (one mpv/VLC requirement across
+// startup, setup and doctor), credential-aware TMDB routing and the
+// browse-focus copy (#853) measured 3,332,573 bytes: +3,360. No dependency or
+// asset. 3255 KiB leaves 547 bytes.
+// Promptless-player resume, the Continue source `ask` choice, YouTube session
+// overrides and the Discover startup route (#852) on top measured 3,336,807
+// bytes: +4,234. No dependency or asset; the Continue picker stays lazy.
+// 3259 KiB leaves 409 bytes.
+// The dedicated desktop profile override, ownership checks, and scoped
+// maintenance on top of #853 and #852 measured 3,343,511 bytes with Bun 1.4.5:
+// +6,704 bytes, no dependency or asset. 3266 KiB leaves 873 bytes.
+// Separately, onboarding v4 (the two-screen quick setup, its machine verdict and consent
+// screen, the launch gate that skips setup for a named destination, the live
+// first Browse and the failure panel's Next row; #854) on top measured
+// 3,348,464 bytes: +11,657, all screen code and copy. No dependency or asset;
+// `splitting: false` means lazy loading cannot recover it. 3271 KiB leaves
+// 1,040 bytes.
+// The profile checks merged with onboarding v4 measured 3,355,286 bytes
+// with Bun 1.4.5: +6,822 over #854 alone. 3277 KiB leaves 362 bytes.
+// Separately, provider batch 1 (#862: the VidBolt, AniLight and Anidap adapters, their
+// registration and defaults, signed-HLS playlist handling, Malay subtitle
+// normalization and the local relay's handling of obfuscated media segments)
+// on top measured 3,378,230 bytes: +29,766, after sharing the provider JSON
+// transport, episode identity parsing and language-list normalization. No
+// dependency or asset. 3300 KiB leaves 970 bytes.
+// With #862 and the profile checks (including canonical layout comparisons),
+// Bun 1.4.5 measured 3,385,214 bytes: +6,984 over #862 alone.
+// 3306 KiB leaves 130 bytes.
+// Separately, the provider picker (#859: per-row status from the health,
+// quarantine and per-title failure stores, the manifest's known issues, and
+// one footer for the keys) on top measured 3,381,740 bytes: +3,510. No
+// dependency or asset. 3303 KiB leaves 532 bytes.
+// With #859 and the profile checks, Bun 1.4.5 measured 3,388,722 bytes:
+// +6,982 over #859 alone. 3310 KiB leaves 718 bytes.
+// Provider batch 2 (#863: the FileSuN movies/series and AnimeParadise anime
+// adapters with their registration and defaults) on top measured 3,392,883
+// bytes: +11,143. No dependency or asset. 3314 KiB leaves 653 bytes.
+// On #863 with the profile checks and bound launchers, Bun 1.4.5 measured
+// 3,402,019 bytes: +9,136 over #863 alone. 3323 KiB leaves 733 bytes.
+// The mpv hardware-decode probe and persistent A/V-sync recovery slice merged
+// onto provider batch 2 measured 3,410,109 bytes: +17,226. No dependency or
+// asset; the probe sample is embedded source data. 3331 KiB leaves 835 bytes.
+// Review fixes for setup/doctor reporting, probe-process termination, and
+// A/V-sync evidence guards measured 3,410,448 bytes: +339. No dependency or
+// asset. 3331 KiB leaves 496 bytes.
+// With the dedicated profile checks, launchers, and review fixes (#860),
+// Bun 1.4.5 measured 3,421,461 bytes: +11,013 over #861.
+// 3342 KiB leaves 747 bytes.
+// Shell-v4 quick wins were measured on their pre-merge branch: narrow
+// browse/palette/playback layout 3,327,248 bytes, tracks panel recovery
+// grammar 3,330,345 bytes, clean details-sheet overlay 3,331,426 bytes,
+// and the pre-#852 merged tree 3,332,234 bytes. The merged main+shell tree
+// measured 3,428,892 bytes with Bun 1.4.5: +7,431 over the profile/hwdec
+// main-line measurement, all shell/onboarding surface code and copy plus the
+// doctor text-module split. No dependency or asset. 3349 KiB is the smallest
+// whole-KiB budget over that measurement and leaves 484 bytes; public
+// launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_349;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

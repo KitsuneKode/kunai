@@ -8,11 +8,16 @@
     "vidrock",
     "rivestream",
     "movy",
-    "allanime",
+    "vidbolt",
+    "filesun",
     "hianime",
     "miruro",
     "animegg",
     "kickassanime",
+    "anilight",
+    "anidap",
+    "animeparadise",
+    "allanime",
     "youtube"
   ],
   "providers": [
@@ -96,18 +101,31 @@
       ]
     },
     {
-      "id": "allanime",
-      "displayName": "AllManga",
-      "description": "Anime episodes in sub and dub — the ani-cli parity source",
-      "domain": "mkissa.to",
+      "id": "vidbolt",
+      "displayName": "VidBolt",
+      "description": "Movies and series through VidBolt's multi-server direct API",
+      "domain": "vidbolt.pro",
       "recommended": false,
-      "mediaKinds": ["anime"],
-      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
       "notes": [
-        "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
-        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
-        "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
-        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177 → 181 → 189; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR; 181 moved it to buildId:group:host:epoch:lane; 189 moved it to epoch|lane|group|host|buildId). GET persisted queries miss on 189, so episode resolve POSTs the desktop document once. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
+        "Browserless TMDB-addressed API: /api/resolve?type=movie&id= or type=tv&id=&season=&episode=, then server iteration through the public exclude parameter.",
+        "Embedded HLS master text is parsed locally for rendition languages, subtitle playlists, and variant inventory; media remains direct.",
+        "No Cloudflare/Turnstile bypass: a challenge response is classified as blocked and the lane falls through."
+      ]
+    },
+    {
+      "id": "filesun",
+      "displayName": "FileSuN",
+      "description": "Movies and series through Atlantic's public embed lookup, FileSuN slot",
+      "domain": "embedsun.cc",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked"],
+      "notes": [
+        "Atlantic title/year lookup; TV coordinates are 1-based.",
+        "Only the FileSuN embed is verified and resolved; direct HLS with captions.",
+        "Local HTTP only: no browser, credentials, or relay."
       ]
     },
     {
@@ -204,6 +222,77 @@
         "The variant playlists are video-only (the audio lives in the rendition group), so the ladder is never expanded into per-quality URLs — mpv gets the master and picks. That is also why qualityRank is 0 rather than an invented height.",
         "Only the HLS lanes are used: the servers list rotated VidStreaming to CatStream on the same cat-player page (2026-10-04), and both names stay playable. BirdStream serves DASH with many subtitle languages, but its manifest answered 404 for the title tested; the doubled slash in its URL (https:////bl.krussdomi.com) is normalized if it is ever enabled. CatStream's manifest now arrives protocol-relative (//bl.krussdomi.com/…), pinned to https by the same normalizer.",
         "The domain rotates (kaa.to -> kaa.mx -> kickass-anime.ro -> kaa.lt). kickass-anime.ro still 301s to the current one and is asked when kaa.lt stops answering at connection level. Its redirect is read by hand (redirect: manual) and accepted only for an https `kaa.<tld>` / `kickass-anime.<tld>` host: an old alias can lapse and be bought, and following it blindly would hand the new owner the API base and every stream URL behind it."
+      ]
+    },
+    {
+      "id": "anilight",
+      "displayName": "AniLight",
+      "description": "Anime episodes in sub and dub through AniLight's AniList-native API",
+      "domain": "anilight.live",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": [
+        "search",
+        "episode-list",
+        "source-resolve",
+        "subtitle-resolve",
+        "multi-source",
+        "quality-ranked"
+      ],
+      "notes": [
+        "Browserless AniList bridge: /api/anime/check-exists?anilistId= resolves the provider slug, /api/watch/{slug} carries episode availability, and /api/sources uses a short-lived x-source-session token.",
+        "Sub and dub are separate audio presentations; a missing requested mode fails closed rather than silently substituting the other audio.",
+        "Opaque upstream media tokens are played through the provider-declared streamProxies (/e/{token}); caption tokens use /api/proxy/captions?token=... ."
+      ]
+    },
+    {
+      "id": "anidap",
+      "displayName": "Anidap",
+      "description": "Anime episodes in sub and dub through Anidap's catalog and server slots",
+      "domain": "anidap.lol",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": [
+        "search",
+        "episode-list",
+        "source-resolve",
+        "subtitle-resolve",
+        "multi-source",
+        "quality-ranked"
+      ],
+      "notes": [
+        "Browserless catalog path: GraphQL anime/searchAnime resolves AniList or title identity to the provider slug; chad.anidap.lol carries episodes, server slots, and source payloads.",
+        "Sub and dub provider slots stay separate. Provider-supplied media headers ride the exact stream candidate into the shared resolve gate.",
+        "Some Anidap slots share AnimeX/aniwatch infrastructure; backend independence is documented in the dossier rather than overstated."
+      ]
+    },
+    {
+      "id": "animeparadise",
+      "displayName": "AnimeParadise",
+      "description": "Anime through AnimeParadise's own AniList-mapped catalog and direct HLS",
+      "domain": "animeparadise.moe",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
+      "notes": [
+        "AniList/MAL identity is checked before episode lookup.",
+        "Reads the watch page's rotating Flight action without executing scripts.",
+        "Direct, local-only HLS with sub audio and ASS/VTT tracks; no relay."
+      ]
+    },
+    {
+      "id": "allanime",
+      "displayName": "AllManga",
+      "description": "Anime episodes in sub and dub — the ani-cli parity source",
+      "domain": "mkissa.to",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
+      "notes": [
+        "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
+        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
+        "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
+        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177 → 181 → 189; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR; 181 moved it to buildId:group:host:epoch:lane; 189 moved it to epoch|lane|group|host|buildId). GET persisted queries miss on 189, so episode resolve POSTs the desktop document once. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
       ]
     },
     {
@@ -876,6 +965,11 @@
     },
     {
       "short": "",
+      "long": "--mpv-hwdec",
+      "description": "Hardware decode: mpv-default | auto | auto-safe | auto-copy | off | backend"
+    },
+    {
+      "short": "",
       "long": "--player",
       "description": "Player backend: desktop <auto|mpv|vlc>; Android/Termux <auto|mpv|vlc>"
     },
@@ -1474,5 +1568,123 @@
       "tier": "surface",
       "order": 620
     }
-  ]
+  ],
+  "providerDefaults": {
+    "revision": 12,
+    "series": {
+      "defaultProvider": "vidlink",
+      "fallbackPriority": ["movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"],
+      "order": ["vidlink", "movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"]
+    },
+    "anime": {
+      "defaultProvider": "hianime",
+      "fallbackPriority": ["kickassanime", "animegg", "miruro", "anilight", "anidap", "animeparadise", "allanime"],
+      "order": ["hianime", "kickassanime", "animegg", "miruro", "anilight", "anidap", "animeparadise", "allanime"]
+    },
+    "youtube": {
+      "defaultProvider": "youtube",
+      "fallbackPriority": ["youtube"],
+      "order": ["youtube"]
+    }
+  },
+  "releaseTargets": [
+    {
+      "id": "linux-x64",
+      "triple": "bun-linux-x64",
+      "out": "kunai-linux-x64",
+      "os": "linux",
+      "arch": "x64",
+      "supportTier": "supported",
+      "archiveName": "kunai-linux-x64.tar.gz"
+    },
+    {
+      "id": "linux-x64-musl",
+      "triple": "bun-linux-x64-musl",
+      "out": "kunai-linux-x64-musl",
+      "os": "linux",
+      "arch": "x64",
+      "libc": "musl",
+      "supportTier": "supported",
+      "archiveName": "kunai-linux-x64-musl.tar.gz"
+    },
+    {
+      "id": "linux-arm64",
+      "triple": "bun-linux-arm64",
+      "out": "kunai-linux-arm64",
+      "os": "linux",
+      "arch": "arm64",
+      "supportTier": "supported",
+      "archiveName": "kunai-linux-arm64.tar.gz"
+    },
+    {
+      "id": "linux-arm64-musl",
+      "triple": "bun-linux-arm64-musl",
+      "out": "kunai-linux-arm64-musl",
+      "os": "linux",
+      "arch": "arm64",
+      "libc": "musl",
+      "supportTier": "supported",
+      "archiveName": "kunai-linux-arm64-musl.tar.gz"
+    },
+    {
+      "id": "android-arm64",
+      "triple": "bun-linux-arm64-android",
+      "out": "kunai-android-arm64",
+      "os": "android",
+      "arch": "arm64",
+      "libc": "bionic",
+      "supportTier": "experimental",
+      "archiveName": "kunai-android-arm64.tar.gz"
+    },
+    {
+      "id": "android-x64",
+      "triple": "bun-linux-x64-android",
+      "out": "kunai-android-x64",
+      "os": "android",
+      "arch": "x64",
+      "libc": "bionic",
+      "supportTier": "experimental",
+      "archiveName": "kunai-android-x64.tar.gz"
+    },
+    {
+      "id": "darwin-x64",
+      "triple": "bun-darwin-x64",
+      "out": "kunai-darwin-x64",
+      "os": "darwin",
+      "arch": "x64",
+      "supportTier": "beta",
+      "archiveName": "kunai-darwin-x64.tar.gz"
+    },
+    {
+      "id": "darwin-arm64",
+      "triple": "bun-darwin-arm64",
+      "out": "kunai-darwin-arm64",
+      "os": "darwin",
+      "arch": "arm64",
+      "supportTier": "beta",
+      "archiveName": "kunai-darwin-arm64.tar.gz"
+    },
+    {
+      "id": "windows-x64",
+      "triple": "bun-windows-x64",
+      "out": "kunai-windows-x64.exe",
+      "os": "windows",
+      "arch": "x64",
+      "supportTier": "beta",
+      "archiveName": "kunai-windows-x64.zip"
+    },
+    {
+      "id": "windows-arm64",
+      "triple": "bun-windows-arm64",
+      "out": "kunai-windows-arm64.exe",
+      "os": "windows",
+      "arch": "arm64",
+      "supportTier": "experimental",
+      "archiveName": "kunai-windows-arm64.zip"
+    }
+  ],
+  "playerSupport": {
+    "desktopManagedPlayers": ["mpv", "vlc"],
+    "androidTargets": ["chooser", "mpv", "vlc"]
+  }
 }

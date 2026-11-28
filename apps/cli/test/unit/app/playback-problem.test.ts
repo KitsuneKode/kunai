@@ -284,6 +284,27 @@ describe("playback problem model", () => {
     expect(problem.userMessage).toContain("metadata relay");
   });
 
+  test("AllManga's own captcha failure earns the same relay hint", () => {
+    // The adapter classifies NEED_CAPTCHA itself and reports AllMangaCaptchaError,
+    // whose message no longer carries the NEED_CAPTCHA token.
+    const problem = buildProviderResolveProblem({
+      attempts: [
+        {
+          failure: {
+            providerId: "allanime",
+            code: "blocked",
+            message:
+              "AllAnime requires a captcha for stream sources from this network. " +
+              "The episode catalog still loads, which is why the episode list looks healthy.",
+          },
+        },
+      ],
+    });
+
+    expect(problem.cause).toBe("provider-access");
+    expect(problem.userMessage).toContain("metadata relay");
+  });
+
   test("a geo-blocked non-relay provider names the block without suggesting relay", () => {
     const problem = buildProviderResolveProblem({
       attempts: [

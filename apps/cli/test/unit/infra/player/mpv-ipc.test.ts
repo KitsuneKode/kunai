@@ -4,6 +4,7 @@ import {
   buildMpvIpcCommand,
   MPV_INITIAL_PROPERTIES,
   MPV_OBSERVED_PROPERTIES,
+  MPV_PERSISTENT_OBSERVED_PROPERTIES,
   openMpvIpcSession,
   parseMpvIpcLine,
 } from "@/infra/player/mpv-ipc";
@@ -188,6 +189,7 @@ describe("mpv-ipc", () => {
       "sid",
       "sub-visibility",
     ]);
+    expect(MPV_PERSISTENT_OBSERVED_PROPERTIES).toEqual([...MPV_OBSERVED_PROPERTIES, "avsync"]);
   });
 
   test("parses successful command responses with request ids", () => {
@@ -355,6 +357,25 @@ describe("mpv-ipc", () => {
       emitData(chunk2);
 
       expect(propertyUpdates).toEqual([{ name: "media-title", value: "🦊" }]);
+      await session.close();
+    });
+  });
+
+  test("routes playback-restart events to the persistent output lifecycle callback", async () => {
+    const restarts: number[] = [];
+    await withFakeMpvSocket(true, async ({ emitData }) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+        onPlaybackRestart({ observedAt }) {
+          restarts.push(observedAt);
+        },
+      });
+
+      emitData(Buffer.from('{"event":"playback-restart"}\n'));
+      expect(restarts).toHaveLength(1);
+      expect(restarts[0]).toBeGreaterThan(0);
       await session.close();
     });
   });

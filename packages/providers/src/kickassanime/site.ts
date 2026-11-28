@@ -67,6 +67,11 @@ function positiveInteger<T>(value: T): number | undefined {
 }
 
 /** `POST /api/fsearch` → `{ result: [...] }`. */
+/** Whether a search body has the `{ result: [...] }` shape, rows or none. */
+export function isKaaSearchResponse<T>(body: T): boolean {
+  return isRecord(body) && Array.isArray(body.result);
+}
+
 export function parseKaaSearchResults<T>(body: T): KaaSearchResult[] {
   if (!isRecord(body) || !Array.isArray(body.result)) return [];
   const results: KaaSearchResult[] = [];

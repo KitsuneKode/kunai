@@ -16,6 +16,10 @@ describe("config metadata", () => {
       effect: "next-resolve",
       options: ["balanced", "fast", "quality-first"],
     });
+    expect(getConfigMetadata("mpvHwdec")).toMatchObject({
+      section: "playback",
+      effect: "next-player-process",
+    });
     expect(getConfigMetadata("providerPriority")).toMatchObject({
       section: "providers",
       effect: "after-save",

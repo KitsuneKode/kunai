@@ -5,6 +5,7 @@ import {
   describeProviderRelayEnabled,
   describeProviderRelayProviders,
   isSafeProviderRelayBaseUrl,
+  RELAY_CAPABLE_PROVIDER_OPTIONS,
   toggleProviderRelayProvider,
 } from "@/domain/provider-relay-settings";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -68,7 +69,9 @@ test("describeProviderRelayProviders counts direct overrides", () => {
       providers: { allanime: { enabled: false }, miruro: { enabled: false } },
     },
   };
-  expect(describeProviderRelayProviders(config)).toBe("8 on · 2 direct");
+  expect(describeProviderRelayProviders(config)).toBe(
+    `${RELAY_CAPABLE_PROVIDER_OPTIONS.length - 2} on · 2 direct`,
+  );
 });
 
 test("isSafeProviderRelayBaseUrl accepts https and local http only", () => {

@@ -71,6 +71,7 @@ import {
 } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { sleepAbortable } from "../shared/timeout-signal";
+import { CHROME_124_USER_AGENT } from "../shared/user-agent";
 import { miruroManifest, MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "./manifest";
 import {
   MIRURO_KNOWN_PIPE_BASE_URLS,
@@ -101,8 +102,7 @@ export const MIRURO_PIPE_BASE_URLS = MIRURO_KNOWN_PIPE_BASE_URLS;
  */
 export const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_124_USER_AGENT;
 
 /**
  * One Cloudflare-gated pipe call. Short on purpose: when a mirror is blocked it
@@ -2254,7 +2254,7 @@ export const miruroProviderModule: CoreProviderModule = {
       const results = media
         .map(mapMiruroSearchMedia)
         .filter((result): result is ProviderSearchResult => result !== null);
-      return results.length > 0 ? results : null;
+      return results;
     } catch (error) {
       // Still null — that is the fallback contract — but not silent. Without
       // this the search router records the AniList fallback as a plain success,

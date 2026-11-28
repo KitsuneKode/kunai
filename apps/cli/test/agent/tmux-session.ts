@@ -201,7 +201,8 @@ function shellQuote(value: string): string {
 function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOptions): string {
   // The launch script owns env so tmux gets one simple argv and quoting stays
   // out of the tmux layer entirely. `profile.env` is the storageRootEnv set —
-  // HOME + XDG + APPDATA, the same isolation every other harness uses.
+  // the profile root plus HOME + XDG + APPDATA, the same isolation every other
+  // harness uses.
   for (const [key, value] of Object.entries(options.env ?? {})) {
     if (key in profile.env && value !== profile.env[key]) {
       throw new Error(`cannot override isolated profile env: ${key}`);

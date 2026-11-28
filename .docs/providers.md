@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T16:28:50Z"
+lastReviewed: "2026-11-28T06:30:00Z"
 ---
 
 # Kunai — Provider Guide
@@ -384,11 +384,16 @@ Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.
 - `providerPriority` controls movie/series fallback and picker order.
-  The shipped default is `["rivestream", "vidrock", "movy", "videasy"]` behind the
-  `vidlink` lane lead: Rivestream first (eleven-service local cycle behind the
-  shared resolve gate), VidRock second (multi-lane AES-GCM payloads behind the
-  direct-stream gate), Movy next (lane-local recovery), Videasy last and still loaded (session/turnstile-gated
-  with a rotted `videasy.to` domain — a working fallback, not a removal).
+  The shipped default is `["movy", "rivestream", "vidrock", "videasy"]` behind the
+  `vidlink` lane lead (`packages/config/src/defaults.ts`, provider-defaults
+  revision 8): Movy first (lane-local recovery; the one fallback that resolved
+  and streamed on the 2026-11-26 runs), then Rivestream (eleven-service local
+  cycle behind the shared resolve gate), VidRock (multi-lane AES-GCM payloads
+  behind the direct-stream gate), and Videasy last and still loaded
+  (session/turnstile-gated with a rotted `videasy.to` domain — registered, not
+  removed). The picker shows this same order and never re-sorts it by health;
+  what each row says about its provider is in
+  [title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md).
   Other unlisted providers stay reachable after configured entries unless
   explicitly switched off.
 - `animeProviderPriority` controls anime fallback and picker order.
@@ -455,9 +460,9 @@ Playback selection and language policy:
 - **Selection stack (highest wins):** per-episode override → title-level manual source default (`{ providerId, titleId } → sourceId`) → provider auto-select (including global `favoriteSourceNames`) → startup priority chain inside the provider.
 - **Cross-episode carry:** only `sourceId` persists across episodes; never carry `streamId` into autoplay or prefetch.
 - **Favorites vs title default:** favorites remain global config bias; a manual source pick on one title writes the title default and wins over favorites for that title until changed.
-- **Language seam:** `mediaLanguageProfileFor` (via `playback-profile-context`) supplies audio/subtitle/quality for resolve, prefetch, cache keys, and mpv handoff. Anime audio intent uses `resolveAnimeAudioIntent` (`original`/`ja` → sub catalog, `en`/`dub` → dub catalog). Miruro walks its fallback audio when the requested one has no working server; that downgrade now emits an `audio:fallback` trace event (requested vs resolved) so the shell can surface it, rather than silently swapping a dub for a sub. AniDB keeps its documented no-fallback contract — it fails closed on the requested mode.
+- **Language seam:** `mediaLanguageProfileFor` (via `playback-profile-context`) supplies audio/subtitle/quality for resolve, prefetch, cache keys, and mpv handoff. Anime audio intent uses `resolveAnimeAudioIntent` (`original`/`ja` → sub catalog, `en`/`dub` → dub catalog). Miruro walks its fallback audio when the requested one has no working server; that downgrade now emits an `audio:fallback` trace event (requested vs resolved) so the shell can surface it, rather than silently swapping a dub for a sub.
 - **Prefetch/cache:** subtitle preference mismatch may soft-reuse prepared video; sub↔dub audio mode change is a hard miss and must re-resolve. Audio-mode switches invalidate episode caches but keep the title source default.
-- **Tracks sub/dub rows:** only when provider trace emits `inventory:audio-modes` with both modes confirmed. Every anime-lane provider emits this where the episode catalog exposes the modes: AllManga, AniDB, AnimeGG, HiAnime, KickAssAnime, and Miruro.
+- **Tracks sub/dub rows:** only when provider trace emits `inventory:audio-modes` with both modes confirmed. Every anime-lane provider emits this where the episode catalog exposes the modes: AllManga, AnimeGG, HiAnime, KickAssAnime, and Miruro.
 
 Source inventory and language normalization:
 
@@ -467,7 +472,7 @@ Source inventory and language normalization:
 - Use `packages/providers/src/shared/hls-ladder.ts` (`expandHlsMasterInventory`) to
   expand lone HLS master playlists into ranked quality candidates for Tracks
   `/quality`. Wired for Miruro masters, AllManga `master.m3u8` links, Vidlink
-  playlists, HiAnime and AniDB ladders. The `auto` fallback row only exists for
+  playlists and HiAnime ladders. The `auto` fallback row only exists for
   a fetched body that is not a master playlist (or a master with no variants) —
   HTTP statuses and transport failures throw `ProviderHttpError` instead, so a
   dead HLS host fails its candidate rather than attesting a stream mpv cannot
@@ -770,33 +775,35 @@ on for other hosts or change the existing one-shot exception. A native mpv 0.41 
 test observes effective options at `file-loaded` with local transport substituted:
 it proves option lifetime, not a live certificate attack or other platform behavior.
 
-| Field                   | Meaning                                                                                                  |
-| ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `mediaKinds: ["anime"]` | Puts the provider on the anime lane — `isAnimeProvider` is derived from this                             |
-| `mediaKinds: ["video"]` | Puts the provider on the YouTube lane                                                                    |
-| `relayProfile`          | Declares the provider relayable; must also be registered in `apps/relay-server/src/provider-registry.ts` |
-| `capabilities`          | Provider capabilities the shell may reason about                                                         |
-| `runtimePorts`          | Runtime ports the module requests (relay fetch, auth, …)                                                 |
-| `recommended`           | Surfaces the provider in recommended lists                                                               |
-| `aliases`               | Legacy ids still accepted in config and cache keys                                                       |
+| Field                   | Meaning                                                                                                                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mediaKinds: ["anime"]` | Puts the provider on the anime lane — `isAnimeProvider` is derived from this                                                                                                                                                                                                       |
+| `mediaKinds: ["video"]` | Puts the provider on the YouTube lane                                                                                                                                                                                                                                              |
+| `relayProfile`          | Declares the provider relayable; must also be registered in `apps/relay-server/src/provider-registry.ts`                                                                                                                                                                           |
+| `capabilities`          | Provider capabilities the shell may reason about                                                                                                                                                                                                                                   |
+| `runtimePorts`          | Runtime ports the module requests (relay fetch, auth, …)                                                                                                                                                                                                                           |
+| `recommended`           | Surfaces the provider in recommended lists                                                                                                                                                                                                                                         |
+| `aliases`               | Other names users know the site by, rendered as "Known as". Never the shared engine family: a name two providers share identifies neither (roster test: `provider-manifest-identity.test.ts`). Legacy **ids** are a separate mechanism, `packages/core/src/provider-id-aliases.ts` |
+| `knownIssue`            | `{ since, summary }` — a dated fault from a maintainer audit. The provider picker shows it until this device records a successful resolve ([title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md)). Remove it the day a probed stream decodes      |
 
 ## Active Beta Providers
 
 Per-provider runtime detail lives in the dossiers, not here. This section keeps
 only the contracts every provider must honour.
 
-| Provider            | Dossier                                                                                                                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AllManga / AllAnime | [allmanga.md](./provider-dossiers/allmanga.md) · [allanime-parity-history.md](./provider-dossiers/allanime-parity-history.md)                                     |
-| AniDB               | [anidb-runtime-contract.md](./provider-dossiers/anidb-runtime-contract.md) · [anidb-metadata-capabilities.md](./provider-dossiers/anidb-metadata-capabilities.md) |
-| Miruro              | [miruro.md](./provider-dossiers/miruro.md)                                                                                                                        |
-| HiAnime             | [hianime.md](./provider-dossiers/hianime.md)                                                                                                                      |
-| Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
-| VidLink             | [vidlink.md](./provider-dossiers/vidlink.md)                                                                                                                      |
-| Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
-| Movy                | [movy.md](./provider-dossiers/movy.md)                                                                                                                            |
-| VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                                                      |
-| YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
+| Provider            | Dossier                                                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| VidLink             | [vidlink.md](./provider-dossiers/vidlink.md)                                                                                  |
+| Movy                | [movy.md](./provider-dossiers/movy.md)                                                                                        |
+| Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                            |
+| VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                  |
+| Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                  |
+| HiAnime             | [hianime.md](./provider-dossiers/hianime.md)                                                                                  |
+| KickAssAnime        | [kickassanime.md](./provider-dossiers/kickassanime.md)                                                                        |
+| AnimeGG             | [animegg.md](./provider-dossiers/animegg.md)                                                                                  |
+| Miruro              | [miruro.md](./provider-dossiers/miruro.md)                                                                                    |
+| AllManga / AllAnime | [allmanga.md](./provider-dossiers/allmanga.md) · [allanime-parity-history.md](./provider-dossiers/allanime-parity-history.md) |
+| YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                  |
 
 Cineby is not a production provider. The standalone Cineby and RGShows
 research modules were removed; the live Cineby-named Videasy flavors remain.
@@ -809,17 +816,22 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
 `hianime` is the **default** anime provider (`animeProvider: "hianime"`,
-`animeProviderPriority: ["animegg", "kickassanime", "miruro", "allanime"]`,
-provider-defaults revision 7). The lead moved off AniDB when anidb.app stopped
+`animeProviderPriority: ["kickassanime", "animegg", "miruro", "anilight", "anidap", "animeparadise", "allanime"]`,
+provider-defaults revision 12). Revision 8 put KickAssAnime ahead of AnimeGG after it
+resolved and streamed on every 2026-11-26 run. The lead moved off AniDB when anidb.app stopped
 serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
 ani-cli's earlier move to HiAnime (c99221d). The AniDB provider module was
 removed; the MAL lookup for AniSkip still handles historic catalog IDs.
 `normalizeRetiredProductionProviderFields` in `@kunai/config` maps any persisted
 `anidb` lane selection to HiAnime, strips the id from priority and disable
 lists, and drops title pins that still name it (without aliasing history ids).
-Revision 7 migrates inherited revision-6 priorities and keeps deliberate
-provider selections. AllAnime is last because the upstream retired the build
-used for stream authorization.
+Revision 8 migrates inherited revision-7 priorities and keeps deliberate
+provider selections. Movy leads the series fallbacks and KickAssAnime leads the
+anime fallbacks because the 2026-11-26 live runs resolved and streamed there.
+Revision 12 moves an inherited AllManga slot to the end of the anime fallback
+order: on 2026-11-28 the pinned build-193 profile still bootstrapped and the
+catalog still loaded, but stream resolution stopped at a CAPTCHA before any
+probed stream. A custom anime order is left alone.
 
 Miruro's search goes through its own pipe (`search`, `q` + `type: "ANIME"`),
 which relays AniList's catalog: results carry AniList and MAL ids exactly as the
@@ -860,11 +872,12 @@ from that alone, and ~1.1 s once `pewe` was quarantined.
 
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
 backends is reached through it, so the providers behind it are the ones that
-share none of that. AnimeGG stays the first fallback because its independent
-catalog and stream path returned four streams in the November 23 hosted sweep.
-That resolve took 21.9 seconds and missed the 12-second default attempt budget.
-KickAssAnime and Miruro returned access refusals on that runner, and AllAnime
-had stale stream authorization. KickAssAnime and AnimeGG each have their own
+share none of that. KickAssAnime leads the anime fallbacks after the 2026-11-26 live runs resolved
+and streamed on every run. AnimeGG follows: its independent catalog and stream
+path returned four streams in the November 23 hosted sweep, but that resolve
+took 21.9 seconds and missed the 12-second default attempt budget. Miruro
+returned access refusals on that runner, and AllAnime had stale stream
+authorization. KickAssAnime and AnimeGG each have their own
 catalog, site and CDN. Both can match a title from another catalog and remember
 the provider's ID on the title bridge. See
 [the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
@@ -912,7 +925,7 @@ default to the table — a bump alone stamps configs without changing them.
 | `vidrock`      | movie, series | direct-http | `packages/providers/src/vidrock/direct.ts`      |
 | `animegg`      | anime         | direct-http | `packages/providers/src/animegg/direct.ts`      |
 | `kickassanime` | anime         | direct-http | `packages/providers/src/kickassanime/direct.ts` |
-| `allanime`     | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`     |
+| `allanime`     | anime         | direct-http | `packages/providers/src/allmanga/direct.ts`     |
 | `hianime`      | anime         | direct-http | `packages/providers/src/hianime/direct.ts`      |
 | `miruro`       | anime         | direct-http | `packages/providers/src/miruro/direct.ts`       |
 | `youtube`      | video         | direct-http | `packages/providers/src/youtube/direct.ts`      |
@@ -921,7 +934,7 @@ default to the table — a bump alone stamps configs without changing them.
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
 
-- **KickAssAnime (`kickassanime`)** — `provider-native`; third in the default anime order, behind HiAnime and Miruro. Slugs are
+- **KickAssAnime (`kickassanime`)** — `provider-native`; the first anime fallback behind HiAnime in the shipped default. Slugs are
   `name-<4 hex>` (`sousou-no-frieren-2d15`), and only that shape is accepted as a native id, so an
   AniList id or another site's slug is never sent as one. A title from any other catalog is matched
   by name and year — exactly one hit, or the provider steps aside — and the slug is then stored

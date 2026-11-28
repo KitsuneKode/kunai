@@ -37,7 +37,10 @@ const TMDB_ANIMATION_GENRE_ID = 16;
 const ANIME_ONLY_PROVIDER_IDS: ReadonlySet<string> = new Set([
   "allanime",
   "anidb",
+  "anidap",
+  "anilight",
   "animegg",
+  "animeparadise",
   "hianime",
   "kickassanime",
   "miruro",

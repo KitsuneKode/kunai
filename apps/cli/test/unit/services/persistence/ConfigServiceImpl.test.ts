@@ -140,6 +140,31 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).startupPriority).toBe("fast");
   });
 
+  test("loads, normalizes, and persists mpv playback quality preferences", async () => {
+    const store = new MemoryConfigStore({
+      mpvHwdec: "videotoolbox",
+      mpvAvsyncRecovery: false,
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.mpvHwdec).toBe("videotoolbox");
+    expect(service.mpvAvsyncRecovery).toBe(false);
+
+    await service.update({ mpvHwdec: "auto-safe", mpvAvsyncRecovery: true });
+    await service.save();
+    expect((await store.load()).mpvHwdec).toBe("auto-safe");
+    expect((await store.load()).mpvAvsyncRecovery).toBe(true);
+
+    const malformed = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        // SAFETY: deliberately malformed persisted JSON verifies normalization
+        // of a value the typed writer cannot produce.
+        mpvHwdec: "cuda" as never,
+      }),
+    );
+    expect(malformed.mpvHwdec).toBe("mpv-default");
+  });
+
   test("normalizes provider priority lists on load and update", async () => {
     const store = new MemoryConfigStore({
       providerPriority: [" vidking ", "rivestream", "vidking", ""],
@@ -595,13 +620,10 @@ describe("ConfigServiceImpl", () => {
         providerDefaultsRevision: 6,
       });
       const service = await ConfigServiceImpl.load(inherited);
-      expect(service.animeProviderPriority).toEqual([
-        "kickassanime",
-        "animegg",
-        "miruro",
-        "allanime",
-      ]);
-      expect((await inherited.load()).providerDefaultsRevision).toBe(8);
+      expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      expect((await inherited.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
 
       const customOrder = ["miruro", "kickassanime", "animegg", "allanime"];
       const custom = new MemoryConfigStore({
@@ -620,7 +642,48 @@ describe("ConfigServiceImpl", () => {
       );
     });
 
-    test("revision 8 moves an untouched revision-7 order in both lanes, and only that", async () => {
+    test("revision 12 moves an untouched revision-11 anime order and leaves a custom one", async () => {
+      const untouched = new MemoryConfigStore({
+        provider: "vidlink",
+        providerPriority: ["movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"],
+        animeProvider: "hianime",
+        animeProviderPriority: [
+          "kickassanime",
+          "animegg",
+          "miruro",
+          "allanime",
+          "anilight",
+          "anidap",
+          "animeparadise",
+        ],
+        providerDefaultsRevision: 11,
+      });
+      const migrated = await ConfigServiceImpl.load(untouched);
+      expect(migrated.providerPriority).toEqual([...DEFAULT_CONFIG.providerPriority]);
+      expect(migrated.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      expect(migrated.animeProviderPriority.at(-1)).toBe("allanime");
+      expect((await untouched.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
+
+      const customOrder = [
+        "allanime",
+        "kickassanime",
+        "animegg",
+        "miruro",
+        "anilight",
+        "anidap",
+        "animeparadise",
+      ];
+      const custom = new MemoryConfigStore({
+        animeProvider: "hianime",
+        animeProviderPriority: customOrder,
+        providerDefaultsRevision: 11,
+      });
+      expect((await ConfigServiceImpl.load(custom)).animeProviderPriority).toEqual(customOrder);
+    });
+
+    test("revision 9 moves an untouched revision-7 order in both lanes, and only that", async () => {
       const untouched = new MemoryConfigStore({
         provider: "vidlink",
         providerPriority: ["rivestream", "vidrock", "movy", "videasy"],
@@ -629,14 +692,11 @@ describe("ConfigServiceImpl", () => {
         providerDefaultsRevision: 7,
       });
       const migrated = await ConfigServiceImpl.load(untouched);
-      expect(migrated.providerPriority).toEqual(["movy", "rivestream", "vidrock", "videasy"]);
-      expect(migrated.animeProviderPriority).toEqual([
-        "kickassanime",
-        "animegg",
-        "miruro",
-        "allanime",
-      ]);
-      expect((await untouched.load()).providerDefaultsRevision).toBe(8);
+      expect(migrated.providerPriority).toEqual([...DEFAULT_CONFIG.providerPriority]);
+      expect(migrated.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      expect((await untouched.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
 
       // A reordered list is a choice, even when it holds the same providers.
       const chosen = ["vidrock", "rivestream", "movy", "videasy"];
@@ -934,6 +994,7 @@ describe("session overrides", () => {
       service.animeLanguageProfile,
       service.seriesLanguageProfile,
       service.movieLanguageProfile,
+      service.youtubeLanguageProfile,
     ]) {
       expect(profile.quality).toBe("720p");
       expect(profile.audio).toBe("en");
@@ -947,7 +1008,7 @@ describe("session overrides", () => {
   });
 
   test("editing one language field in Settings never saves the launch flag's other fields", async () => {
-    for (const lane of ["anime", "series", "movie"] as const) {
+    for (const lane of ["anime", "series", "movie", "youtube"] as const) {
       const profileKey = `${lane}LanguageProfile` as const;
       const saved = { audio: "original", subtitle: "en", quality: "720p" };
       const store = new MemoryConfigStore({ [profileKey]: saved });

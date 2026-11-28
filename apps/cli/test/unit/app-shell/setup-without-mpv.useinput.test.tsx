@@ -6,6 +6,7 @@ import {
   MPV_INSTALL,
   resolveInstallCommand,
 } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
@@ -15,6 +16,8 @@ import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 const MISSING_MPV: CapabilitySnapshot = {
   mpv: false,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: false,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -25,6 +28,7 @@ const MISSING_MPV: CapabilitySnapshot = {
     available: false,
     reason: "test fixture",
   },
+  mpvHardwareAccel: emptyMpvHardwareAccelProbe("mpv-not-found"),
   issues: [
     {
       id: "mpv-missing",

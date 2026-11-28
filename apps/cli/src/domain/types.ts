@@ -80,6 +80,8 @@ export interface TitleInfo {
   readonly isAnime?: boolean;
   readonly episodeCount?: number;
   readonly launchSource?: "search" | "history" | "continue" | "offline-library" | "notification";
+  /** One-shot local/online answer already chosen for this launch, if any. */
+  readonly playbackSourceOverride?: "local" | "online";
   /**
    * `m` (starting-point menu) was pressed for this title. Enter on a rested
    * result auto-resumes or auto-advances; this flag is what keeps the menu one
@@ -299,6 +301,8 @@ export interface ProviderMetadata {
   readonly providerLane: ProviderLane;
   readonly catalogIdentity?: "provider-native" | "anilist" | "tmdb";
   readonly domain?: string;
+  /** Manifest-declared upstream fault; see `ProviderKnownIssue` in `@kunai/core`. */
+  readonly knownIssue?: { readonly since: string; readonly summary: string };
 }
 
 export interface SearchMetadata {

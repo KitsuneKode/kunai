@@ -82,17 +82,23 @@ function narrowFooterActions(
   const commandAction = pool.find((action) => action.action === "command-mode");
   const nonCommandActions = pool.filter((action) => action.action !== "command-mode");
   const criticalStop = nonCommandActions.find(criticalStopAction);
-  const primaryAction = nonCommandActions.find((action) => action.primary);
   const candidates: FooterAction[] = [];
   const addCandidate = (action: FooterAction | undefined) => {
     if (action && !candidates.includes(action)) candidates.push(action);
   };
+  // Surface order is the fallback. Narrow chrome has three explicit priority
+  // classes before it: destructive stop is safety chrome, narrow-essential
+  // navigation must not disappear, and the primary action is the next-best
+  // recovery path when even those do not fit.
   addCandidate(criticalStop);
-  addCandidate(primaryAction);
+  for (const action of nonCommandActions) {
+    if (action.narrowEssential) addCandidate(action);
+  }
+  addCandidate(nonCommandActions.find((action) => action.primary));
   for (const action of nonCommandActions) addCandidate(action);
 
   const nonCommandLimit = Math.max(0, poolLimit - (commandAction ? 1 : 0));
-  const widthBudget = Math.max(18, terminalWidth - 4);
+  const widthBudget = Math.max(18, terminalWidth - 2);
   const commandColumns = commandAction ? footerActionColumns(commandAction, terminalWidth) : 0;
   const selected: FooterAction[] = [];
   let selectedColumns = 0;

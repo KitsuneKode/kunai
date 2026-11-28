@@ -65,6 +65,7 @@ import { TracksPanelShell } from "@/app-shell/tracks-panel-shell";
 import type { Container } from "@/container";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { createInitialState } from "@/domain/session/SessionState";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import { buildHelpText, parseArgs } from "@/main";
 import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
@@ -188,6 +189,8 @@ describe("plain / screen-reader rendering across every shell surface", () => {
     const missingMpvSnapshot: CapabilitySnapshot = {
       mpv: false,
       mpvRequired: true,
+      vlc: true,
+      vlcRequired: false,
       ytDlp: true,
       ffprobe: true,
       curl: { present: true, impersonates: true, profile: "chrome" },
@@ -198,6 +201,7 @@ describe("plain / screen-reader rendering across every shell surface", () => {
         available: false,
         reason: "test",
       },
+      mpvHardwareAccel: emptyMpvHardwareAccelProbe("mpv-not-found"),
       issues: [
         {
           id: "mpv-missing",

@@ -62,11 +62,15 @@ const EXEMPT = {
 };
 
 /**
- * The gate itself, the walk that applies it across a candidate's rungs, or the
- * shared direct-stream engine that calls it. All three funnel into
- * `verifyCandidateStream`.
+ * The gate itself, the walk that applies it across a candidate's rungs, or a
+ * shared engine that calls it. All four funnel into `verifyCandidateStream`.
  */
-const GATE_MARKERS = ["verifyCandidateStream", "selectVerifiedStream", "resolveDirectStreamSource"];
+const GATE_MARKERS = [
+  "verifyCandidateStream",
+  "selectVerifiedStream",
+  "resolveDirectStreamSource",
+  "resolveMultiSourceProvider",
+];
 
 function providerSources(provider: string): string {
   const dir = join(PROVIDER_SRC, provider);

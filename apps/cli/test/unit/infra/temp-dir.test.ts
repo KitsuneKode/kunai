@@ -7,10 +7,13 @@ import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 
 describe("createPrivateTempDir", () => {
   test("creates a fresh directory under the isolated temp root", async () => {
-    // Default (no TMPDIR override): the storage-root temp dir under OS tmp.
+    // Default scratch lives under the profile the preload installed:
+    // <KUNAI_CONFIG_DIR>/tmp/kunai-<prefix>-…
+    const profile = process.env.KUNAI_CONFIG_DIR;
+    if (profile === undefined) throw new Error("the test preload must provide a profile root");
     const dir = await createPrivateTempDir("hls");
     try {
-      expect(dir.startsWith(join(tmpdir(), "kunai", "kunai-hls-"))).toBe(true);
+      expect(dir.startsWith(join(profile, "tmp", "kunai-hls-"))).toBe(true);
       expect((await stat(dir)).isDirectory()).toBe(true);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -19,10 +22,13 @@ describe("createPrivateTempDir", () => {
 
   test("follows the platform temp override into a sandbox instead of the shared OS tmp", async () => {
     const sandbox = await mkdtemp(join(tmpdir(), "kunai-tmpdir-override-"));
-    // Windows resolves tempDir from TEMP ?? TMP; POSIX from TMPDIR.
+    // Windows resolves tempDir from TEMP ?? TMP; POSIX from TMPDIR. The
+    // profile override would win over both, so it must be absent here.
     const key = process.platform === "win32" ? "TEMP" : "TMPDIR";
-    const previous = process.env[key];
+    const previousTmp = process.env[key];
+    const previousProfile = process.env.KUNAI_CONFIG_DIR;
     process.env[key] = sandbox;
+    delete process.env.KUNAI_CONFIG_DIR;
     try {
       const dir = await createPrivateTempDir("hls");
       try {
@@ -31,8 +37,10 @@ describe("createPrivateTempDir", () => {
         await rm(dir, { recursive: true, force: true });
       }
     } finally {
-      if (previous === undefined) delete process.env[key];
-      else process.env[key] = previous;
+      if (previousTmp === undefined) delete process.env[key];
+      else process.env[key] = previousTmp;
+      if (previousProfile === undefined) delete process.env.KUNAI_CONFIG_DIR;
+      else process.env.KUNAI_CONFIG_DIR = previousProfile;
       await rm(sandbox, { recursive: true, force: true });
     }
   });

@@ -57,7 +57,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   youtubeProvider: "youtube",
   // `createProviderPrioritySnapshot` prepends `provider` to this array, so it
   // holds the *rest* of the order — not the lane default. Rivestream leads the
-  // rest (eleven-service local cycle behind the shared resolve gate, so one
+  // rest (twelve-service local cycle behind the shared resolve gate, so one
   // dead mirror costs a candidate, not the lane); VidRock follows (multi-lane
   // AES-GCM payloads behind the direct-stream gate). Movy is named explicitly
   // ahead of Videasy: unlisted it floated behind a provider whose stream
@@ -67,8 +67,12 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // not removed.
   // Revision 8 (2026-11-26 live runs, two each): Movy resolved and streamed;
   // Rivestream timed out and VidRock's streams answered 502 every time, so Movy
-  // now follows VidLink and the failing pair sits behind it.
-  providerPriority: ["movy", "rivestream", "vidrock", "videasy"],
+  // now follows VidLink and the failing pair sits behind it. Revision 9 appends
+  // VidBolt at the end until future live sweeps earn promotion.
+  // Revision 10 appends FileSuN (verified on the 2026-11-27 intake: direct
+  // *.vmpx.online HLS behind Atlantic's public lookup) as another tail
+  // fallback until future live sweeps earn promotion.
+  providerPriority: ["movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default.
@@ -77,7 +81,23 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // runner's requests, and AllManga's stream bootstrap was stale.
   // Revision 8: KickAssAnime resolved and streamed on every 2026-11-26 run and
   // AnimeGG on one of two; Miruro (404) and AllManga (#724) stay behind them.
-  animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"],
+  // Revision 9 appends AniLight and Anidap at the end until future live sweeps
+  // earn promotion.
+  // Revision 11 appends AnimeParadise (verified on the 2026-11-27 intake:
+  // direct stream.animeparadise.moe HLS behind its own AniList-mapped catalog)
+  // as another tail fallback until future live sweeps earn promotion.
+  // Revision 12 moves AllManga last. On 2026-11-28 the pinned build-193
+  // profile still bootstrapped, and the catalog still loaded, but stream
+  // resolution stopped at a CAPTCHA before any probed stream.
+  animeProviderPriority: [
+    "kickassanime",
+    "animegg",
+    "miruro",
+    "anilight",
+    "anidap",
+    "animeparadise",
+    "allanime",
+  ],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
   // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
@@ -86,7 +106,11 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Revision 6 retires AniDB from production and drops it from shipped defaults.
   // Revision 7 moves AnimeGG ahead of blocked fallbacks and puts AllManga last.
   // Revision 8 puts the fallbacks that work first: Movy, then KickAssAnime.
-  providerDefaultsRevision: 8,
+  // Revision 9 appends VidBolt, AniLight, and Anidap as tail fallbacks.
+  // Revision 10 appends FileSuN to the series tail; the anime lane is unchanged.
+  // Revision 11 appends AnimeParadise to the anime tail; the series lane is unchanged.
+  // Revision 12 moves AllManga to the end of the anime fallback order.
+  providerDefaultsRevision: 12,
   disabledProviders: [],
   stremioAddons: [],
   experimentalStremioAddons: false,
@@ -155,6 +179,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   startupPriority: DEFAULT_STARTUP_PRIORITY,
   providerDns: "doh",
   hdrMode: "auto",
+  mpvHwdec: "mpv-default",
+  mpvAvsyncRecovery: true,
   player: "auto",
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,

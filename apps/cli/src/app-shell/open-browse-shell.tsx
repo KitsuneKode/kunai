@@ -29,6 +29,7 @@ export function openBrowseShell<T>({
   initialSelectedIndex,
   initialCalendarTypeTab,
   initialCalendarRoute,
+  startupPicks,
   placeholder,
   commands,
   onSearch,
@@ -70,6 +71,7 @@ export function openBrowseShell<T>({
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
   initialCalendarRoute?: CalendarRouteRequest;
+  startupPicks?: boolean;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
@@ -81,7 +83,7 @@ export function openBrowseShell<T>({
   /** Session status implied by non-success calendar route transitions. */
   onCalendarStatus?: (status: CalendarSessionStatus) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
-  onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
+  onLoadRecommendations?: (isCurrent: () => boolean) => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
@@ -134,6 +136,7 @@ export function openBrowseShell<T>({
         initialSelectedIndex={initialSelectedIndex}
         initialCalendarTypeTab={initialCalendarTypeTab}
         initialCalendarRoute={initialCalendarRoute}
+        startupPicks={startupPicks}
         placeholder={placeholder}
         commands={commands}
         onSearch={onSearch}

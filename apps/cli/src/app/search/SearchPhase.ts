@@ -24,7 +24,7 @@ import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
   prepareReplayTitleForProvider,
-  titleFromHistorySelection,
+  continueTitleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
 import { titleInfoFromSearchResult, videoMetaFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
@@ -44,6 +44,7 @@ import { detailsSheetContextFor } from "@/app/search/details-sheet-context";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
 import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
+import { buildSearchEmptyMessage } from "@/app/search/search-empty-message";
 import {
   buildSearchFailureNote,
   shouldRunBootstrapSearch,
@@ -53,7 +54,7 @@ import {
   loadBrowseDisplayContext,
   mapBrowseResultOption,
 } from "@/app/search/search-phase-browse-context";
-import { appendSearchFilterChip, buildSearchEmptyMessage } from "@/app/search/search-phase-copy";
+import { appendSearchFilterChip } from "@/app/search/search-phase-copy";
 import {
   adoptHistoryEntry,
   applySearchSelectionSessionRouting,
@@ -330,6 +331,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // the next BrowseShell open (which seeds the useCalendarState hook). Reset
       // after each open so a plain /calendar afterwards is not stuck on a filter.
       let pendingCalendarType: CalendarTypeTab | undefined;
+      let startupPicks = false;
 
       // The subtitle for the most recently loaded route (calendar/trending/surprise/
       // discover). Without this, an empty-query results view always showed the generic
@@ -421,7 +423,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             pendingInitialRoute = undefined;
             continue;
           }
-          routeSubtitle = await loadSearchRoute(pendingInitialRoute, context);
+          // Startup picks are MOUNTED, not awaited, like the calendar: Browse
+          // opens with a live field and loads them underneath.
+          if (pendingInitialRoute === "recommendation") startupPicks = true;
+          else routeSubtitle = await loadSearchRoute(pendingInitialRoute, context);
           syncBrowseQueryDraft();
           pendingInitialRoute = undefined;
           continue;
@@ -474,7 +479,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           pendingSearchSourceName = search.sourceName;
           pendingSearchWarnings = searchIntent.warnings;
           pendingSearchEmptyMessage =
-            search.results.length === 0 ? buildSearchEmptyMessage(search) : undefined;
+            search.results.length === 0 ? buildSearchEmptyMessage(search, searchMode) : undefined;
 
           logger.info("Bootstrap search complete", {
             query: searchIntent.intent.query,
@@ -607,6 +612,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingCalendarType = undefined;
         const openedCalendarRoute = pendingCalendarRoute;
         pendingCalendarRoute = undefined;
+        const openedStartupPicks = startupPicks;
+        startupPicks = false;
         // Fresh, not the loop-top snapshot: a bootstrap search dispatched its
         // results after that snapshot was taken, so reading it here handed the
         // shell an empty list while the state already held the hits.
@@ -657,6 +664,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           onPaletteCommand: (commandId) => notePaletteCommand(container, "browse", commandId),
           initialCalendarTypeTab,
           initialCalendarRoute: openedCalendarRoute,
+          startupPicks: openedStartupPicks,
           initialErrorMessage: initialSearchError,
           onLoadCalendar: async (signal) => {
             const bundle = await loadCalendarResults(container, signal);
@@ -972,7 +980,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               localFilterBadges: search.evidence.local,
               unsupportedFilterBadges: search.evidence.unsupported,
               warnings: searchIntent.warnings,
-              emptyMessage: buildSearchEmptyMessage(search),
+              emptyMessage: buildSearchEmptyMessage(search, stateManager.getState().mode),
             };
           },
           onLoadDiscovery: async () => {
@@ -1026,15 +1034,15 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               emptyMessage: "Trending is unavailable right now. Search still works normally.",
             };
           },
-          onLoadRecommendations: async () => {
+          onLoadRecommendations: async (isCurrent) => {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
             const toBrowseResponse = async (
               discover: Awaited<ReturnType<typeof loadDiscoverResults>>,
             ) => {
               const results = [...discover.results];
-              stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
               const freshBrowseContext = await loadBrowseDisplayContext(container, results);
+              if (isCurrent()) stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
               return {
                 options: results.map((r) =>
                   mapBrowseResultOption(container, freshBrowseContext, r),
@@ -1177,11 +1185,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
 
           if (outcome.action === "download") {
-            if (outcome.value) {
-              syncSelectedResultIndex(stateManager, outcome.value);
-            }
+            if (outcome.value) syncSelectedResultIndex(stateManager, outcome.value);
             const { downloadSelectedResult } = await import("../../app-shell/workflows");
-            await downloadSelectedResult(container);
+            await downloadSelectedResult(container, outcome.value);
             continue;
           }
 
@@ -1228,7 +1234,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 applyHistorySelectionProvider(container, continueWatchingSelection);
                 const title = await prepareReplayTitleForProvider(
                   container,
-                  titleFromHistorySelection(continueWatchingSelection),
+                  continueTitleFromHistorySelection(continueWatchingSelection),
                   continueWatchingSelection.entry,
                 );
                 stateManager.dispatch({
@@ -1288,7 +1294,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             applyHistorySelectionProvider(container, continueWatchingSelection);
             const title = await prepareReplayTitleForProvider(
               container,
-              titleFromHistorySelection(continueWatchingSelection),
+              continueTitleFromHistorySelection(continueWatchingSelection),
               continueWatchingSelection.entry,
             );
             stateManager.dispatch({ type: "SELECT_TITLE", title });

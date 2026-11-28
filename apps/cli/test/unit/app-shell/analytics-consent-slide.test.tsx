@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { SetupShell } from "@/app-shell/setup-shell";
 import { AnalyticsScreen } from "@/app-shell/setup/AnalyticsScreen";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
@@ -22,6 +23,8 @@ function frame(selectedIndex: number | null = null, payload = UNSET_PAYLOAD_FIXT
 const READY: CapabilitySnapshot = {
   mpv: true,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -32,6 +35,7 @@ const READY: CapabilitySnapshot = {
     available: true,
     reason: "test fixture",
   },
+  mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
   issues: [],
 };
 

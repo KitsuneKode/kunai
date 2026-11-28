@@ -6,6 +6,7 @@ import {
   manifestUsesHostRootSegmentPaths,
   parseFirstHlsMediaSegmentPath,
   parseFirstHlsVariantPath,
+  resolveHlsPlaylistUrl,
   resolveHlsSegmentUrl,
   shouldMaterializeHlsManifest,
 } from "../src/shared/hls-manifest";
@@ -79,6 +80,38 @@ describe("hls-manifest helpers", () => {
     expect(parseFirstHlsVariantPath(master)).toBe("index-v1-a1.m3u8");
   });
 
+  test("parses the variant URI after STREAM-INF even when the playlist extension is obfuscated", () => {
+    const master = [
+      "#EXTM3U",
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",URI="audio.m3u8.png?exp=1"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=24000000,RESOLUTION=3840x1600,AUDIO="audio"',
+      "video_2160p.m3u8.png?exp=1&sig=abc",
+    ].join("\n");
+    expect(isHlsMasterPlaylist(master)).toBe(true);
+    expect(parseFirstHlsVariantPath(master)).toBe("video_2160p.m3u8.png?exp=1&sig=abc");
+  });
+
+  test("skips ordinary comments after STREAM-INF without crossing a stream boundary", () => {
+    const master = [
+      "#EXTM3U",
+      "#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080",
+      "# packager comment before the video URI",
+      "video/v1.m3u8.png",
+      "#EXT-X-STREAM-INF:BANDWIDTH=128000",
+      "# comment inside the audio-only entry",
+      "audio/a1.m3u8.png",
+    ].join("\n");
+    expect(parseFirstHlsVariantPath(master)).toBe("video/v1.m3u8.png");
+
+    const boundaryOnly = [
+      "#EXTM3U",
+      "#EXT-X-STREAM-INF:BANDWIDTH=4000000",
+      "#EXT-X-STREAM-INF:BANDWIDTH=128000",
+      "audio/a1.m3u8.png",
+    ].join("\n");
+    expect(parseFirstHlsVariantPath(boundaryOnly)).toBe("audio/a1.m3u8.png");
+  });
+
   test("parses obfuscated media segment names", () => {
     const media = ["#EXTM3U", "#EXTINF:4,", "seg-1-v1-a1.ts.html"].join("\n");
     expect(isHlsMasterPlaylist(media)).toBe(false);
@@ -98,5 +131,56 @@ describe("hls-manifest helpers", () => {
     expect(
       shouldMaterializeHlsManifest("https://light.goldweather.net/token/index.m3u8", relativeOnly),
     ).toBe(false);
+  });
+
+  test("propagates api_key credentials only to same-origin nested playlists", () => {
+    const master = "https://cdn.example/media/title/index.m3u8?api_key=secret&other=1";
+    expect(resolveHlsPlaylistUrl(master, "video_720p.m3u8")).toBe(
+      "https://cdn.example/media/title/video_720p.m3u8?api_key=secret",
+    );
+    expect(resolveHlsPlaylistUrl(master, "video_720p.m3u8?api_key=child")).toBe(
+      "https://cdn.example/media/title/video_720p.m3u8?api_key=child",
+    );
+    expect(resolveHlsSegmentUrl(master, "video_720p/00000.ts")).toBe(
+      "https://cdn.example/media/title/video_720p/00000.ts",
+    );
+  });
+
+  test("materializes signed master playlists whose child playlists need credentials", () => {
+    const master = [
+      "#EXTM3U",
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",URI="audio.m3u8"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000000,AUDIO="a"',
+      "video.m3u8",
+    ].join("\n");
+    const url = "https://cdn.example/media/title/index.m3u8?api_key=secret";
+    expect(shouldMaterializeHlsManifest(url, master)).toBe(true);
+    const output = absolutizeHlsManifest(master, url);
+    expect(output).toContain('URI="https://cdn.example/media/title/audio.m3u8?api_key=secret"');
+    expect(output).toContain("\nhttps://cdn.example/media/title/video.m3u8?api_key=secret");
+  });
+});
+
+describe("parseFirstHlsVariantPath variant preference", () => {
+  test("an audio-only STREAM-INF ahead of the video variant does not win", () => {
+    const master = [
+      "#EXTM3U",
+      '#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2"',
+      "index-a1.m3u8",
+      '#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2"',
+      "index-v1.m3u8",
+    ].join("\n");
+    expect(parseFirstHlsVariantPath(master)).toBe("index-v1.m3u8");
+  });
+
+  test("without RESOLUTION it falls back to the filename heuristic over STREAM-INF entries", () => {
+    const master = [
+      "#EXTM3U",
+      "#EXT-X-STREAM-INF:BANDWIDTH=128000",
+      "audio/a1.m3u8.png",
+      "#EXT-X-STREAM-INF:BANDWIDTH=4000000",
+      "video/v1.m3u8.png",
+    ].join("\n");
+    expect(parseFirstHlsVariantPath(master)).toBe("video/v1.m3u8.png");
   });
 });

@@ -2,8 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
+import {
+  emptyMpvHardwareAccelProbe,
+  type MpvHardwareAccelProbe,
+} from "@/infra/player/mpv-hwaccel-probe";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
+import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type {
@@ -14,6 +19,7 @@ import type {
 import { PlayerServiceImpl } from "@/infra/player/PlayerServiceImpl";
 import type { launchMpv } from "@/mpv";
 import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
+import type { MpvHwdecMode } from "@kunai/config";
 
 /** Reaches the generation seams the service owns privately. */
 type GenerationInternals = {
@@ -77,6 +83,9 @@ function createService(
       getActive?: () => ActivePlayerControl | null;
     };
     launchMpv?: typeof launchMpv;
+    config?: unknown;
+    readCachedMpvHwdec?: () => Promise<MpvHardwareAccelProbe>;
+    probeMpvHwdec?: () => Promise<MpvHardwareAccelProbe>;
   } = {},
 ) {
   const loggerEntries: Array<{
@@ -176,6 +185,52 @@ describe("PlayerServiceImpl diagnostics", () => {
       subtitle: localSource.subtitlePath,
       subtitleUrlKind: "local",
     });
+  });
+
+  test("one-shot playback turns an unanswered resume offer into mpv's start position", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let launchedWith: Parameters<typeof launchMpv>[0] | null = null;
+    const { service } = createService(events, {
+      // SAFETY: the capture returns a full PlaybackResult; only the input is inspected.
+      launchMpv: (async (options) => {
+        launchedWith = options;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(createStream({ subtitle: undefined }), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 2",
+      playbackMode: "manual",
+      startAt: 0,
+      resumePromptAt: 612,
+      resumeStartChoicePrompt: true,
+    });
+
+    expect(launchedWith).toMatchObject({ startAt: 612 });
+  });
+
+  test("one-shot playback keeps an explicit start position ahead of the resume offer", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let launchedWith: Parameters<typeof launchMpv>[0] | null = null;
+    const { service } = createService(events, {
+      // SAFETY: the capture returns a full PlaybackResult; only the input is inspected.
+      launchMpv: (async (options) => {
+        launchedWith = options;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(createStream({ subtitle: undefined }), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 2",
+      playbackMode: "manual",
+      startAt: 44,
+      resumePromptAt: 612,
+      resumeStartChoicePrompt: true,
+    });
+
+    expect(launchedWith).toMatchObject({ startAt: 44 });
   });
 
   test("one-shot playback hands mpv the resolve gate's evidence, so a fresh pass is not re-probed", async () => {
@@ -411,6 +466,32 @@ describe("PlayerServiceImpl diagnostics", () => {
       context: { event: "mpv-process-started" },
     });
   });
+
+  test("avsync recovery exhaustion is recorded as a give-up diagnostic", () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    const generation = internals(service).currentGeneration;
+    const wrap = internals(service).wrapPlaybackEventHandler.bind(service);
+
+    wrap(
+      generation,
+      undefined,
+    )({
+      type: "avsync-recovery-exhausted",
+      reason: "budget-exhausted",
+      resyncCount: 2,
+    });
+
+    expect(events[0]).toMatchObject({
+      category: "playback",
+      operation: "mpv.avsync.recovery.give-up",
+      context: {
+        event: "avsync-recovery-exhausted",
+        reason: "budget-exhausted",
+        resyncCount: 2,
+      },
+    });
+  });
 });
 
 describe("PlayerServiceImpl playback generations", () => {
@@ -462,6 +543,8 @@ describe("PlayerServiceImpl playback generations", () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events, {
       presentation: { isInteractiveShellMounted: () => true },
+      // SAFETY: the launch double returns the full playback result contract;
+      // this test only counts how often playback requested the hardware probe.
       launchMpv: (async () => createPlaybackResult()) as typeof launchMpv,
     });
     const activations: PlaybackGeneration[] = [];
@@ -1073,3 +1156,138 @@ function nextTurn(): Promise<void> {
     setTimeout(resolve, 0);
   });
 }
+
+describe("PlayerServiceImpl hardware decode selection", () => {
+  function playbackConfig(mpHwdec: MpvHwdecMode) {
+    return {
+      startupPriority: "balanced",
+      hdrMode: "auto",
+      mpvHwdec: mpHwdec,
+      mpvAvsyncRecovery: true,
+      getRaw: () => ({}),
+    };
+  }
+
+  async function launchWithHwdec(
+    configMode: MpvHwdecMode,
+    cachedProbe: MpvHardwareAccelProbe,
+    hwdec: { freshProbe?: Promise<MpvHardwareAccelProbe> } = {},
+  ) {
+    const events: DiagnosticEventInput[] = [];
+    let launchedMpv: MpvRuntimeOptions | undefined;
+    let cacheReads = 0;
+    let freshProbeRuns = 0;
+    const { service } = createService(events, {
+      config: playbackConfig(configMode),
+      readCachedMpvHwdec: async () => {
+        cacheReads += 1;
+        return cachedProbe;
+      },
+      probeMpvHwdec: async () => {
+        freshProbeRuns += 1;
+        return await (hwdec.freshProbe ?? cachedProbe);
+      },
+      // SAFETY: the capture double honors the launch result contract; only
+      // the runtime-options input is inspected in this hardware-mode test.
+      launchMpv: (async (launch) => {
+        launchedMpv = launch.mpv;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(createStream(), { url: createStream().url, displayTitle: "Episode" });
+    return { launchedMpv, cacheReads, freshProbeRuns };
+  }
+
+  function hardwareProbe() {
+    return {
+      ...emptyMpvHardwareAccelProbe("hardware"),
+      probed: true,
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+      probedAt: 1,
+      fromCache: true,
+    };
+  }
+
+  test("auto mode uses a cached hardware verdict as a yes/no gate for mpv auto-safe", async () => {
+    const { launchedMpv, cacheReads, freshProbeRuns } = await launchWithHwdec(
+      "auto",
+      hardwareProbe(),
+    );
+    expect(cacheReads).toBe(1);
+    expect(freshProbeRuns).toBe(0);
+    expect(launchedMpv).toMatchObject({
+      hwdecMode: "auto",
+      hwdecBackend: "auto-safe",
+    });
+  });
+
+  test("a cache miss launches with mpv defaults and warms one background probe", async () => {
+    let finishProbe!: (probe: MpvHardwareAccelProbe) => void;
+    const freshProbe = new Promise<MpvHardwareAccelProbe>((resolve) => {
+      finishProbe = resolve;
+    });
+    const { launchedMpv, cacheReads, freshProbeRuns } = await launchWithHwdec(
+      "auto",
+      emptyMpvHardwareAccelProbe("not-probed"),
+      { freshProbe },
+    );
+
+    // The fresh probe is deliberately still pending: first playback must not wait for it.
+    expect(freshProbeRuns).toBe(1);
+    expect(cacheReads).toBe(1);
+    expect(launchedMpv).toMatchObject({ hwdecMode: "auto" });
+    expect(launchedMpv?.hwdecBackend).toBeUndefined();
+    finishProbe(hardwareProbe());
+    await freshProbe;
+  });
+
+  test("mpv automatic, explicit backend, and mpv-default modes do not run Kunai's probe", async () => {
+    for (const mode of ["mpv-default", "auto-safe", "auto-copy", "videotoolbox"] as const) {
+      const { launchedMpv, cacheReads, freshProbeRuns } = await launchWithHwdec(
+        mode,
+        emptyMpvHardwareAccelProbe("not-probed"),
+      );
+      expect(cacheReads).toBe(0);
+      expect(freshProbeRuns).toBe(0);
+      expect(launchedMpv).toMatchObject({ hwdecMode: mode });
+      expect(launchedMpv?.hwdecBackend).toBeUndefined();
+    }
+  });
+
+  test("auto mode shares one background probe across cache-miss playback launches", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let freshProbeRuns = 0;
+    let finishProbe!: (probe: MpvHardwareAccelProbe) => void;
+    const freshProbe = new Promise<MpvHardwareAccelProbe>((resolve) => {
+      finishProbe = resolve;
+    });
+    const { service } = createService(events, {
+      config: playbackConfig("auto"),
+      readCachedMpvHwdec: async () => emptyMpvHardwareAccelProbe("not-probed"),
+      probeMpvHwdec: async () => {
+        freshProbeRuns += 1;
+        return await freshProbe;
+      },
+      launchMpv: (async () => createPlaybackResult()) as typeof launchMpv,
+    });
+
+    await service.play(createStream(), { url: createStream().url, displayTitle: "One" });
+    await service.play(createStream(), { url: createStream().url, displayTitle: "Two" });
+    expect(freshProbeRuns).toBe(1);
+    finishProbe(hardwareProbe());
+    await freshProbe;
+  });
+
+  test("off mode never runs the probe and force-disables hardware decode downstream", async () => {
+    const { launchedMpv, cacheReads, freshProbeRuns } = await launchWithHwdec(
+      "off",
+      hardwareProbe(),
+    );
+    expect(cacheReads).toBe(0);
+    expect(freshProbeRuns).toBe(0);
+    expect(launchedMpv).toMatchObject({ hwdecMode: "off" });
+    expect(launchedMpv?.hwdecBackend).toBeUndefined();
+  });
+});

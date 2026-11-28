@@ -65,10 +65,12 @@ docker run --rm --network none \
 	bash -ceu '
 		profile=/tmp/kunai-release-smoke
 		export HOME="$profile/home"
-		export KUNAI_BIN_DIR="$profile/bin"
-		export KUNAI_CONFIG_DIR="$profile/config"
-		export KUNAI_DATA_DIR="$profile/data"
-		export KUNAI_CACHE_DIR="$profile/cache"
+		# A KUNAI_CONFIG_DIR profile owns its bin, data and cache (#860): the
+		# installers refuse per-dir overrides that disagree with it.
+		export KUNAI_CONFIG_DIR="$profile/profile"
+		# The container runs as root; install.sh refuses root without this.
+		export KUNAI_INSTALL_ALLOW_ROOT=1
+		launcher="$KUNAI_CONFIG_DIR/bin/kunai"
 		export KUNAI_DL_BASE=file:///release
 		export KUNAI_SKIP_PATH_UPDATE=1
 		mkdir -p "$HOME"
@@ -80,7 +82,7 @@ docker run --rm --network none \
 			--skip-deps \
 			--skip-path-update
 
-		manifest="$KUNAI_CONFIG_DIR/install.json"
+		manifest="$KUNAI_CONFIG_DIR/config/install.json"
 		test -f "$manifest"
 		grep -F "\"activeVersion\": \"$KUNAI_RELEASE_VERSION\"" "$manifest"
 		grep -F "\"artifactName\": \"$KUNAI_RELEASE_ASSET\"" "$manifest"
@@ -88,10 +90,10 @@ docker run --rm --network none \
 		grep -F "\"archiveSha256\": \"$KUNAI_EXPECTED_ARCHIVE_SHA\"" "$manifest"
 		grep -F "\"archiveSourceUrl\": \"file:///release/download/v$KUNAI_RELEASE_VERSION/$KUNAI_RELEASE_ASSET.tar.zst\"" "$manifest"
 
-		version_output="$("$KUNAI_BIN_DIR/kunai" --version)"
+		version_output="$("$launcher" --version)"
 		printf "%s\n" "$version_output"
 		printf "%s\n" "$version_output" | grep -E "^kunai[[:space:]]+v?$KUNAI_RELEASE_VERSION([[:space:]]|$)"
-		help_output="$("$KUNAI_BIN_DIR/kunai" --help)"
+		help_output="$("$launcher" --help)"
 		test -n "$help_output"
 		printf "%s\n" "$help_output"
 	'

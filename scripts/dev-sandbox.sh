@@ -3,13 +3,10 @@
 # Run Kunai against a throwaway profile, so a manual test cannot touch the real
 # one.
 #
-# This exists because the obvious-looking variable is a trap: KUNAI_CONFIG_DIR
-# is *not* an override. A run that sets it still resolves the real data and
-# cache roots through getKunaiPaths(), reads the developer's live SQLite, and
-# can migrate it in place. There is no undo for that.
-#
-# The full set below is what apps/cli/test/helpers/storage-env.ts uses, and it
-# is deliberately every platform's roots at once: XDG_* covers Linux, HOME and
+# KUNAI_CONFIG_DIR selects a profile dir inside the sandbox, so config,
+# data, cache and credentials all resolve under it. The remaining roots below
+# are the same set apps/cli/test/helpers/storage-env.ts uses, deliberately every
+# platform's roots at once: XDG_* covers Linux, HOME and
 # USERPROFILE cover the homedir() fallbacks macOS resolves through, and
 # APPDATA / LOCALAPPDATA cover Windows. Variables that do not apply to the host
 # are ignored, so one call is correct everywhere.
@@ -23,6 +20,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SANDBOX="${SANDBOX_DIR:-${TMPDIR:-/tmp}/kunai-sandbox}"
+# KUNAI_CONFIG_DIR requires an absolute path, so a relative SANDBOX_DIR is
+# resolved against the launch directory before any marker checks.
+[[ "$SANDBOX" == /* ]] || SANDBOX="$PWD/$SANDBOX"
 # A trailing slash must not conceal a symlink from the ownership check.
 while [[ "$SANDBOX" != "/" && "$SANDBOX" == */ ]]; do
   SANDBOX="${SANDBOX%/}"
@@ -90,6 +90,7 @@ echo
 exec env \
   DO_NOT_TRACK=1 \
   KUNAI_CREDENTIAL_BACKEND=file \
+  KUNAI_CONFIG_DIR="$SANDBOX/profile" \
   HOME="$SANDBOX" \
   USERPROFILE="$SANDBOX" \
   XDG_CONFIG_HOME="$SANDBOX" \

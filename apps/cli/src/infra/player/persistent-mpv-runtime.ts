@@ -18,6 +18,8 @@ export type PersistentMpvSessionRuntime = {
   which(command: string): string | null;
   /** Optional filesystem probe for mpv discovery (flatpak app dirs). Defaults to real fs. */
   exists?(path: string): boolean;
+  /** Deterministic clock for cooldown-sensitive recovery logic in tests. */
+  now?(): number;
   spawn(
     command: string[],
     options: Parameters<typeof Bun.spawn>[1],

@@ -179,6 +179,23 @@ describe("parseAnimeggEmbedSources", () => {
   });
 });
 
+describe("animeggProviderModule.search", () => {
+  test("returns an empty row set as an empty result, not a transport failure", async () => {
+    const rows = await animeggProviderModule.search?.(
+      { query: "definitely not a real animegg title" },
+      {
+        now: () => "2026-09-12T00:00:00.000Z",
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () => new Response("<html><body>no hits</body></html>"),
+        },
+      },
+    );
+
+    expect(rows).toEqual([]);
+  });
+});
+
 describe("animeggStreamUrl", () => {
   test("makes the embed's relative file absolute", () => {
     expect(animeggStreamUrl("/play/1/video.mp4?for=2")).toBe(

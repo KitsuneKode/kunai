@@ -127,3 +127,28 @@ describe("TitleProviderHealthService", () => {
     });
   });
 });
+
+describe("TitleProviderHealthService.getFailure", () => {
+  test("reports the live streak for one title and clears with a clean success", () => {
+    const service = new TitleProviderHealthService(
+      new MemoryRepo(),
+      () => new Date("2026-11-27T12:00:00.000Z"),
+    );
+    expect(service.getFailure("tmdb:1", "vidrock")).toBeNull();
+
+    service.recordFailure("tmdb:1", "vidrock", undefined, "timeout");
+    service.recordFailure("tmdb:1", "vidrock", undefined, "dead-stream");
+
+    expect(service.getFailure("tmdb:1", "vidrock")).toEqual({
+      consecutiveFailures: 2,
+      errorClass: "dead-stream",
+      lastFailureAt: "2026-11-27T12:00:00.000Z",
+    });
+    // Another title, and another provider on this one, are unaffected.
+    expect(service.getFailure("tmdb:2", "vidrock")).toBeNull();
+    expect(service.getFailure("tmdb:1", "vidlink")).toBeNull();
+
+    service.recordCleanSuccess("tmdb:1", "vidrock");
+    expect(service.getFailure("tmdb:1", "vidrock")).toBeNull();
+  });
+});

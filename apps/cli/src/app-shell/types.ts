@@ -133,6 +133,8 @@ export type FooterAction = {
   primary?: boolean;
   /** Needs a selected row/job/notification; hidden by emptySafeFooterActions on empty lists. */
   requiresSelection?: boolean;
+  /** Navigation or safety chrome that keeps its narrow slot before primary-styled actions. */
+  narrowEssential?: boolean;
 };
 
 export type PlaybackShellState = {

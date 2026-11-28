@@ -1,12 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CURL_INSTALL, MPV_INSTALL, YT_DLP_INSTALL } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import { runDoctor, type RunDoctorOptions } from "@/services/update/run-doctor";
 import type { CapabilitySnapshot } from "@/ui";
+
+const realStorageModule = { ...(await import("@kunai/storage")) };
 
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
 const made: string[] = [];
@@ -17,10 +20,12 @@ afterEach(async () => {
   }
 });
 
-function emptyCapabilities(): CapabilitySnapshot {
+function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): CapabilitySnapshot {
   return {
     mpv: true,
     mpvRequired: true,
+    vlc: true,
+    vlcRequired: false,
     ffprobe: true,
     ytDlp: true,
     curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -31,9 +36,18 @@ function emptyCapabilities(): CapabilitySnapshot {
       available: false,
       reason: "test",
     },
+    mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
     issues: [],
+    ...overrides,
   };
 }
+
+const noProfileMpvHwdecRead = {
+  mpvHwdecMode: "mpv-default" as const,
+  readMpvHwdecMode: async () => {
+    throw new Error("runDoctor test touched the profile mpv hardware config");
+  },
+};
 
 async function makeLayout() {
   const root = await mkdtemp(join(tmpdir(), "kunai-run-doctor-"));
@@ -61,6 +75,7 @@ describe("runDoctor", () => {
 
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: true,
         layout,
         now: () => FIXED_DATE,
@@ -107,6 +122,7 @@ describe("runDoctor", () => {
     console.log = () => {};
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: false,
         layout,
         now: () => FIXED_DATE,
@@ -128,6 +144,7 @@ describe("runDoctor", () => {
     console.log = () => {};
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: false,
         layout,
         now: () => FIXED_DATE,
@@ -161,6 +178,7 @@ describe("runDoctor", () => {
     console.log = () => {};
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: false,
         layout,
         now: () => FIXED_DATE,
@@ -208,6 +226,7 @@ describe("runDoctor", () => {
     const originalLog = console.log;
     console.log = () => {};
     const laneDepsOnly: RunDoctorOptions = {
+      ...noProfileMpvHwdecRead,
       json: false,
       layout,
       now: () => FIXED_DATE,
@@ -239,6 +258,100 @@ describe("runDoctor", () => {
     }
   });
 
+  test("an injected mpv hardware mode never touches the profile config path", async () => {
+    const { root, layout } = await makeLayout();
+    const trackedPaths = {
+      configDir: layout.configDir,
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      tempDir: join(root, "temp"),
+      configPath: join(layout.configDir, "config.json"),
+      mpvBridgePath: join(layout.configDir, "mpv", "kunai-bridge.lua"),
+      dataDbPath: join(root, "data", "kunai-data.sqlite"),
+      cacheDbPath: join(root, "cache", "kunai-cache.sqlite"),
+      logPath: join(root, "data", "logs.txt"),
+    };
+    let configPathAccesses = 0;
+    Object.defineProperty(trackedPaths, "configPath", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        configPathAccesses += 1;
+        return join(layout.configDir, "config.json");
+      },
+    });
+    mock.module("@kunai/storage", () => ({
+      ...realStorageModule,
+      getKunaiPaths: () => trackedPaths,
+    }));
+    const mockedStorage = await import("@kunai/storage");
+    void mockedStorage.getKunaiPaths().configPath;
+    expect(configPathAccesses).toBe(1);
+    configPathAccesses = 0;
+
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    };
+    try {
+      const code = await runDoctor({
+        readMpvHwdecMode: async () => "off",
+        json: true,
+        layout,
+        now: () => FIXED_DATE,
+        runningExecutable: { path: "/tmp/kunai", version: "0.3.0" },
+        pathValue: "",
+        platform: "linux",
+        fileExists: () => false,
+        probeCapabilities: async () => emptyCapabilities(),
+      });
+
+      expect(code).toBe(0);
+      const parsed = JSON.parse(lines[0]!);
+      expect(parsed.playback).toMatchObject({ mpvHwdec: "off", mpvHwdecEmitted: "no" });
+      expect(configPathAccesses).toBe(0);
+      expect(lines).toHaveLength(1);
+    } finally {
+      console.log = originalLog;
+      mock.module("@kunai/storage", () => realStorageModule);
+    }
+  });
+
+  test("strict mode accepts a VLC-only desktop when auto selected VLC", async () => {
+    const { layout } = await makeLayout();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      expect(
+        await runDoctor({
+          ...noProfileMpvHwdecRead,
+          json: false,
+          strict: true,
+          layout,
+          now: () => FIXED_DATE,
+          runningExecutable: { path: layout.launcherPath, version: "1.2.3" },
+          pathValue: "",
+          platform: "linux",
+          fileExists: () => false,
+          playerChoice: "auto",
+          installedPlayers: { mpv: false, vlc: true },
+          probeCapabilities: async (options) => {
+            expect(options.playerMode).toEqual({ kind: "managed-vlc" });
+            return emptyCapabilities({
+              mpv: false,
+              vlc: true,
+              mpvRequired: false,
+              vlcRequired: true,
+            });
+          },
+        }),
+      ).toBe(0);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
   test("strict mode still exits 0 when there is nothing to report", async () => {
     const { layout } = await makeLayout();
     const originalLog = console.log;
@@ -246,6 +359,7 @@ describe("runDoctor", () => {
     try {
       expect(
         await runDoctor({
+          ...noProfileMpvHwdecRead,
           json: false,
           strict: true,
           layout,
@@ -262,6 +376,74 @@ describe("runDoctor", () => {
     }
   });
 
+  test("--player vlc is honored by the maintenance fast path instead of ignored", async () => {
+    const { layout } = await makeLayout();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      expect(
+        await runDoctor({
+          ...noProfileMpvHwdecRead,
+          argv: ["doctor", "--player", "vlc"],
+          json: false,
+          strict: true,
+          layout,
+          now: () => FIXED_DATE,
+          runningExecutable: { path: layout.launcherPath, version: "1.2.3" },
+          pathValue: "",
+          platform: "linux",
+          fileExists: () => false,
+          probeCapabilities: async (options) => {
+            expect(options.playerMode).toEqual({ kind: "managed-vlc" });
+            return emptyCapabilities();
+          },
+        }),
+      ).toBe(0);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  test("an invalid doctor --player value exits as usage rather than probing the wrong player", async () => {
+    const { layout } = await makeLayout();
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      expect(
+        await runDoctor({
+          ...noProfileMpvHwdecRead,
+          argv: ["doctor", "--player", "potato"],
+          layout,
+          probeCapabilities: async () => {
+            throw new Error("probe must not run");
+          },
+        }),
+      ).toBe(2);
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  test("a trailing doctor --player with no value exits as usage, not with the saved choice", async () => {
+    const { layout } = await makeLayout();
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      expect(
+        await runDoctor({
+          ...noProfileMpvHwdecRead,
+          argv: ["doctor", "--strict", "--json", "--player"],
+          layout,
+          probeCapabilities: async () => {
+            throw new Error("probe must not run");
+          },
+        }),
+      ).toBe(2);
+    } finally {
+      console.error = originalError;
+    }
+  });
+
   test("text mode prints human-readable report without writing", async () => {
     const { layout } = await makeLayout();
     const lines: string[] = [];
@@ -271,6 +453,7 @@ describe("runDoctor", () => {
     };
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: false,
         layout,
         now: () => FIXED_DATE,

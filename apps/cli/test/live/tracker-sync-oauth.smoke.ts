@@ -35,6 +35,8 @@ import type { TrackerOperation } from "@/services/sync/operations";
 import { TmdbAdapter } from "@/services/sync/TmdbAdapter";
 import type { SyncOutcome } from "@/services/sync/types";
 
+import { storageRootEnv } from "../helpers/storage-env";
+
 type Step = { readonly name: string; readonly ok: boolean; readonly detail?: string };
 
 const steps: Step[] = [];
@@ -282,16 +284,11 @@ async function main(): Promise<void> {
 
   /**
    * Isolated profile: the live run must never touch the developer's real
-   * config, history, or cached credentials.
-   *
-   * The production container resolves both SQLite and token storage through
-   * these XDG roots. Imports happen after the overrides so this exercises the
-   * same path resolution as the CLI without touching the developer profile.
+   * config, history, or cached credentials. Imports happen after the
+   * overrides so this exercises the same path resolution as the CLI.
    */
   const profile = mkdtempSync(join(tmpdir(), "kunai-live-sync-"));
-  process.env.XDG_CONFIG_HOME = join(profile, "config");
-  process.env.XDG_DATA_HOME = join(profile, "data");
-  process.env.XDG_CACHE_HOME = join(profile, "cache");
+  Object.assign(process.env, storageRootEnv(profile));
   process.stdout.write(`isolated profile: ${profile}\n\n`);
 
   const controller = new AbortController();

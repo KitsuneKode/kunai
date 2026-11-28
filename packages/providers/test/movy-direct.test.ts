@@ -476,3 +476,40 @@ test("Movy expands real HLS qualities and preserves manifest-only subtitles", as
   ]);
   expect(result.subtitles.map((s) => s.url)).toEqual(["https://cdn.example/en.vtt"]);
 });
+
+test("Movy falls back to the candidate-gated stream when bounded final probes fail", async () => {
+  const lowUrl = "https://low.example/720.mp4";
+  const highUrls = [
+    "https://high-a.example/2160.mp4",
+    "https://high-b.example/1440.mp4",
+    "https://high-c.example/1080.mp4",
+  ];
+  const body = encryptFixturePayload({
+    sources: [
+      { url: lowUrl, type: "mp4", quality: "720p" },
+      { url: highUrls[0], type: "mp4", quality: "2160p" },
+      { url: highUrls[1], type: "mp4", quality: "1440p" },
+      { url: highUrls[2], type: "mp4", quality: "1080p" },
+    ],
+  });
+  const ctx = contextReturning((url) => {
+    if (url.includes("/seed")) return Response.json({ seed: FIXTURE.seed, ttlMs: 30000 });
+    if (url.includes("/miami/sources")) return new Response(body);
+    if (url.includes("/sources")) return new Response("down", { status: 500 });
+    if (highUrls.includes(url)) return new Response("forbidden", { status: 403 });
+    if (url === lowUrl) {
+      return new Response(null, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": "1024" },
+      });
+    }
+    return new Response("not found", { status: 404 });
+  });
+
+  const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+
+  expect(result.status).toBe("resolved");
+  const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+  expect(selected?.url).toBe(lowUrl);
+  expect(result.streams.map((stream) => stream.url)).toEqual([lowUrl]);
+});

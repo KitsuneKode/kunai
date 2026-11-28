@@ -10,7 +10,12 @@ import { historyContinueNode } from "../../harness/capture-history";
 import { libraryCaptureFixture, POPULATED_ENTRIES } from "../../harness/capture-library";
 import { playbackErrorNode } from "../../harness/capture-playback-error";
 import { settingsFixtures } from "../../harness/capture-settings";
-import { SETUP_ROWS, SETUP_SCREENS, setupFrameAt } from "../../harness/capture-setup";
+import {
+  QUICK_SETUP_SCREENS,
+  SETUP_ROWS,
+  SETUP_SCREENS,
+  setupFrameAt,
+} from "../../harness/capture-setup";
 import { statsFixtures } from "../../harness/capture-stats";
 import {
   CAPTURE_WIDTHS,
@@ -168,6 +173,19 @@ describe("committed captures match a live re-render", () => {
           width,
           SETUP_ROWS,
           setupFrameAt(index, CAPTURE_WIDTHS[width]),
+        );
+      }
+    });
+  }
+
+  for (const [index, name] of QUICK_SETUP_SCREENS.entries()) {
+    test(`setup-quick-${index + 1}-${name}`, async () => {
+      for (const width of WIDTHS) {
+        await expectLiveMatch(
+          `setup-quick-${index + 1}-${name}`,
+          width,
+          SETUP_ROWS,
+          setupFrameAt(index, CAPTURE_WIDTHS[width], "quick"),
         );
       }
     });

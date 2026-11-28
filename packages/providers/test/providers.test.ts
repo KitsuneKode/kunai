@@ -32,7 +32,10 @@ import {
   videasyProviderModule,
   vidlinkProviderModule,
 } from "../src/index";
-import { clearRivestreamCachesForTest } from "../src/rivestream/direct";
+import {
+  clearRivestreamCachesForTest,
+  RIVESTREAM_STATIC_PROVIDER_SERVICES,
+} from "../src/rivestream/direct";
 import { encryptOpensslSalted, sha256Hex } from "../src/shared/openssl-evp";
 
 // Resolving through rivestream caches service discovery in module state, which
@@ -868,7 +871,10 @@ test("rivestream falls back to static provider services when service discovery i
 
   expect(result.status).toBe("resolved");
   expect(requests.some((url) => url.includes("/api/providers"))).toBe(true);
-  expect(requests.some((url) => url.includes("provider=apogee"))).toBe(true);
+  // The first static backend answers when discovery is down.
+  expect(
+    requests.some((url) => url.includes(`provider=${RIVESTREAM_STATIC_PROVIDER_SERVICES[0]}`)),
+  ).toBe(true);
 });
 
 test("rivestream evidence fixture preserves provider server label and normalized language", async () => {
@@ -1582,6 +1588,7 @@ test("strict language normalizer keeps provider aliases out of public language f
   expect(normalizeIsoLanguageCode("Portuguese (BR)")).toBe("pt");
   expect(normalizeIsoLanguageCode("pt-br")).toBe("pt");
   expect(normalizeIsoLanguageCode("Vietnamese")).toBe("vi");
+  expect(normalizeIsoLanguageCode("may")).toBe("ms");
   expect(normalizeIsoLanguageCode("Vietsub")).toBeUndefined();
   expect(normalizeIsoLanguageCode("HindiCast")).toBeUndefined();
   expect(normalizeIsoLanguageCode("killjoy")).toBeUndefined();

@@ -42,7 +42,13 @@ async function graph(command: string, affected = false) {
   const args = (source ?? "").trim().split(/\s+/);
   if (args[0] === "bunx") args.shift();
   expect(args.shift()).toBe("turbo");
-  const env: NodeJS.ProcessEnv = { ...process.env, TURBO_TELEMETRY_DISABLED: "1" };
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TURBO_TELEMETRY_DISABLED: "1",
+    // Turbo writes telemetry config under an OS-config dir that ignores
+    // HOME/XDG on Windows — pin it inside the preload's isolated home.
+    TURBO_CONFIG_DIR_PATH: process.env.HOME,
+  };
   if (affected) {
     env.TURBO_SCM_BASE = "HEAD";
     env.TURBO_SCM_HEAD = "HEAD";

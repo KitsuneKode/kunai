@@ -44,12 +44,14 @@ import {
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
+import { CHROME_124_USER_AGENT } from "../shared/user-agent";
 import { kickassanimeManifest, KICKASSANIME_PROVIDER_ID } from "./manifest";
 import {
   kaaEpisodeNumbers,
   kaaPageForEpisode,
   parseKaaEpisodePage,
   parseKaaPlayerPage,
+  isKaaSearchResponse,
   parseKaaSearchResults,
   parseKaaServers,
   type KaaSearchResult,
@@ -62,8 +64,7 @@ const PRIMARY_BASE = "https://kaa.lt";
 /** Still redirects to whatever the current domain is; asked only when kaa.lt fails. */
 const REDIRECTING_ALIAS = "https://kickass-anime.ro/";
 const KAA_FETCH_TIMEOUT_MS = 12_000;
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_124_USER_AGENT;
 
 /** The only server whose stream played end to end; see the manifest notes. */
 const PLAYABLE_SERVERS = new Set(["VidStreaming", "CatStream"]);
@@ -373,10 +374,15 @@ export const kickassanimeProviderModule: CoreProviderModule = {
   async search(input, context) {
     const query = input.query.trim();
     if (!query) return null;
-    const results = parseKaaSearchResults(
-      await fetchJson(context, "/api/fsearch", { method: "POST", body: { query, page: 1 } }),
-    );
-    if (results.length === 0) return null;
+    const body = await fetchJson(context, "/api/fsearch", {
+      method: "POST",
+      body: { query, page: 1 },
+    });
+    // `{ result: [] }` is a search with no rows; any other shape is a failed
+    // response, and `null` is how a failed search reads to the router.
+    if (!isKaaSearchResponse(body)) return null;
+    const results = parseKaaSearchResults(body);
+    if (results.length === 0) return [];
 
     return results.map((result): ProviderSearchResult => {
       const posterUrl = result.posterKey

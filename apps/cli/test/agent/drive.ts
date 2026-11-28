@@ -74,7 +74,9 @@ function usage(): never {
   --verify-citation <text> require text to appear in captured evidence (repeatable)
   --evidence <dir>         write an evidence bundle (transcript + frames + db deltas)
   --seed onboarded|fresh   profile seed (default: onboarded)
-  --providers smoke|none   fixture providers (default: smoke)
+  --providers smoke|production|none
+                           fixture providers (default: smoke); production is
+                           the bundled roster behind the fixture catalog
   --mpv fake|none          PATH-shim fake mpv (default: none)
   --fake-mpv-mode <m>      normal | fail-pre-loaded | hold
   --width N / --rows N     terminal size (default: 100x30)
@@ -160,7 +162,7 @@ function parseArgs(argv: string[]): DriveArgs {
       }
       case "--providers": {
         const providers = next();
-        if (providers !== "smoke" && providers !== "none") usage();
+        if (providers !== "smoke" && providers !== "production" && providers !== "none") usage();
         out.options = { ...out.options, providers };
         break;
       }

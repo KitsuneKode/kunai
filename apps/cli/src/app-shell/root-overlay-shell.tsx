@@ -166,6 +166,7 @@ import {
 } from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
 import { type BrowseOverlay, OverlayPanel } from "./overlay-panel";
+import { providerPickerFooter, providerPickerSources } from "./overlay-provider-picker";
 import { pickPaletteTitle } from "./palette-title-launch";
 import {
   buildAboutPanelLines,
@@ -469,16 +470,10 @@ export function RootOverlayShell({
       }),
       currentProvider: overlay.currentProvider,
       previewImageUrl: state.currentTitle?.posterUrl,
-      getProviderHealth: (providerId) => container.providerHealth.get(providerId),
+      ...providerPickerSources(container, state.currentTitle?.id, cols),
       isCrossLane: (metadata) => !providerMetadataMatchesLane(metadata, overlay.lane),
     });
-  }, [
-    overlay,
-    container.providerRegistry,
-    container.providerHealth,
-    rawConfig,
-    state.currentTitle,
-  ]);
+  }, [overlay, container, rawConfig, state.currentTitle, cols]);
   const providerInitialIndex =
     overlay.type === "provider_picker"
       ? Math.max(
@@ -774,7 +769,12 @@ export function RootOverlayShell({
     overlayStatus
       ? overlayStatus
       : subtitle;
-  const footerActions: readonly FooterAction[] = [
+  // The provider picker owns its whole footer: its keys as chips, its state as the text line.
+  const providerFooter =
+    overlay.type === "provider_picker"
+      ? providerPickerFooter(filteredProviderOptions, selectedIndex, filterQuery, cols)
+      : null;
+  const footerActions: readonly FooterAction[] = providerFooter?.actions ?? [
     // Media pickers carry their nav keys in the footer so the title can be the
     // single hint line (no duplicate "Type to filter, Enter to select" guidance).
     ...(isRootMediaPickerOverlay(overlay)
@@ -2581,8 +2581,8 @@ export function RootOverlayShell({
       ) : null}
       <ShellFooter
         taskLabel={
-          overlay.type === "provider_picker"
-            ? "Type to filter · Enter switch · Esc closes"
+          providerFooter
+            ? providerFooter.taskLabel
             : overlay.type === "diagnostics"
               ? // The footer actions row already carries export/close/commands.
                 // Repeating them here was the second of two competing footers.

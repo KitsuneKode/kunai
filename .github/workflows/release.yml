@@ -68,7 +68,10 @@ env:
   HUSKY: "0"
   CANDIDATE_ARTIFACT: kunai-release-candidate
   NPM_TARBALL_NAME: kunai-npm.tgz
-  RELEASE_NODE_VERSION: "22.14.0"
+  # Trusted npm publishing needs Node >= 22.14 with npm >= 11.5.1. The
+  # repository gate also loads the anti-slop oxlint plugin, which is
+  # TypeScript; Node strips types without a flag only from 22.18.
+  RELEASE_NODE_VERSION: "22.18.0"
   RELEASE_NPM_VERSION: "11.5.1"
 
 jobs:

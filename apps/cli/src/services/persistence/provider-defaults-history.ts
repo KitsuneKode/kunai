@@ -100,6 +100,37 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "hianime",
     priorities: [["animegg", "kickassanime", "miruro", "allanime"]],
   },
+  // Revision 8 led the rest with KickAssAnime. Revision 9 only appends the new
+  // tail fallbacks, so this exact list is still treated as inherited.
+  {
+    revision: 8,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "miruro", "allanime"]],
+  },
+  // Revision 9 kept the same order plus the AniLight and Anidap tails.
+  // Revision 10 touches only the series lane, so this pair still migrates.
+  {
+    revision: 9,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap"]],
+  },
+  // Revision 10 changed only the series lane, so the revision-9 anime list was
+  // still on disk. Revision 11 appends AnimeParadise.
+  {
+    revision: 10,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap"]],
+  },
+  // Revision 11 appended AnimeParadise and still tried AllManga before those
+  // tails. Revision 12 moves AllManga last: bootstrap is current, stream
+  // resolution is CAPTCHA-blocked.
+  {
+    revision: 11,
+    animeProvider: "hianime",
+    priorities: [
+      ["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap", "animeparadise"],
+    ],
+  },
 ];
 
 export function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
@@ -170,6 +201,26 @@ const INHERITED_SERIES_DEFAULTS: readonly {
     provider: "vidlink",
     priorities: [["rivestream", "vidrock", "movy", "videasy"]],
   })),
+  // Revision 8 led the rest with Movy. Revision 9 appends VidBolt at the tail.
+  {
+    revision: 8,
+    provider: "vidlink",
+    priorities: [["movy", "rivestream", "vidrock", "videasy"]],
+  },
+  // Revision 9 kept the same order plus the VidBolt tail. Revision 10 appends
+  // FileSuN behind it.
+  {
+    revision: 9,
+    provider: "vidlink",
+    priorities: [["movy", "rivestream", "vidrock", "videasy", "vidbolt"]],
+  },
+  // Revision 10 shipped the FileSuN tail. Revision 11 changes only the anime
+  // lane, so this pair still migrates.
+  {
+    revision: 10,
+    provider: "vidlink",
+    priorities: [["movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"]],
+  },
 ];
 
 /**

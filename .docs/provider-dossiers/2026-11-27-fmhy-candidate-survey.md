@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27"
+lastReviewed: "2026-11-28"
 ---
 
 # FMHY Provider Candidate Survey — Movie/TV & Anime Expansion (2026-11-27)
@@ -34,9 +34,14 @@ lastReviewed: "2026-11-27"
 
 ---
 
-## Ranked Shortlist — Movie / TV Lane (Top 6 + 1 Watchlist)
+## Ranked Shortlist — Movie / TV Lane (Top 5 + 1 Watchlist)
 
-Adding these 6 independent backends to Kunai's active Movie/TV roster (`vidlink`, `vidrock`, `rivestream`, plus `movy` when unblocked) yields **9–10 independent backends**, replacing the permanently shut-down `videasy`.
+These candidates could expand the active Movie/TV roster, but advertised
+streams do not count toward the 8–10 backend goal without decoded title frames.
+
+**Chillflix was removed from the shortlist:** Batch 2 decoded a 15-second
+promotional clip rather than the requested title. Its tested HLS was ad-only;
+see the [intake dossier](./2026-11-27-batch2-intake.md).
 
 | Rank             | Candidate (FMHY Frontends)                                                                                                                       | Addressing                                                 | Real Backend / CDN                                                        | Servers                                     | Audio / Dubs                                                     | Max Quality                 | Subtitles                                                  | Container  | Anti-Bot                                                                                      | Difficulty | Browser?                   |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------- | ---------- | -------------------------- |
@@ -44,9 +49,8 @@ Adding these 6 independent backends to Kunai's active Movie/TV roster (`vidlink`
 | **2**            | **Atlantic / VidOra** (`atlantic.bz`, `vidora.ac` — FMHY 🌟 Superstar, `fprime.at`, `Atlas`)                                                     | TMDB ID                                                    | `hls.lol` ecosystem (`api.atlantic.bz`, `cdn.hls.lol`, `natsuki.hls.lol`) | Multi-server                                | Multi-audio: **en, hi, es, fr, de, it, ja, ko**                  | **4K (2160p)**              | `natsuki.hls.lol/subs` (`.srt`) + `sub.vdrk.site` (`.vtt`) | HLS        | None (HTTP 200 plain curl); minified Vite JS                                                  | **M**      | No                         |
 | **3**            | **VidFast** (`vidfast.vc` / `vidfast.pro` — Multi-Server staple)                                                                                 | TMDB ID                                                    | `vidfast.vc` aggregator (~10–15 named lanes)                              | **10+**                                     | Multi-language on localized lanes                                | **4K (2160p)**              | External VTT/SRT                                           | HLS + MP4  | None (HTTP 200 plain curl); JS/AES `en` payload encryption                                    | **M**      | No                         |
 | **4**            | **PunkFlix / VidGold Family** (`player.cinezo.live`, `player.vidgold.net`, `player.vidqueen.st` — powers 🌟 ArrowTV/Cinezo/FlikHub, 🌟 SweetFox) | TMDB ID                                                    | `punkflix.net` / `*.vidgold.vip` / `proxy3.flikhub.net`                   | Multi-server                                | **11 languages**: en, **hi, es, it, fr, de, pt, ar, ja, ko, ru** | **4K (2160p)**              | External OpenSubtitles + provider tracks                   | HLS + DASH | `curl_cffi` 200 on embed; obfuscated bootstrap JS; Turnstile refs in bundle (verify API gate) | **M–L**    | No (verify Turnstile gate) |
-| **5**            | **Chillflix** (`chillflix.pw` — powers ⭐ Chillflix, Toflix, Vuflix)                                                                             | TMDB ID                                                    | `chillflix.pw` (`/player-api`, `/api/movie/{id}`)                         | Multi-server                                | Multi-audio: **en, es, fr, de, it, pt**                          | **4K (2160p)**              | External soft subs                                         | HLS        | None (HTTP 200 plain curl); Next.js RSC/API                                                   | **M**      | No                         |
-| **6**            | **VidUp** (`vidup.to` — used by 🌟 SweetFox & Multi-Server sites)                                                                                | TMDB ID                                                    | `vidup.to` standalone multi-server embed                                  | Multi-server                                | Multi-language on alt lanes                                      | **4K (2160p)**              | External soft subs                                         | HLS        | None (HTTP 200 plain curl); AES client crypto                                                 | **M**      | No                         |
-| **7** _(Alt #6)_ | **MovieBox / Aoneroom** (`movieboxonline.net`, `h5.aoneroom.com` — Dedicated-Server)                                                             | Own search (`subjectId` + `detailPath`; title+year bridge) | `aoneroom.com` / `wefeed-h5-bff` (`istio-envoy`)                          | Single dedicated CDN (`pbcdn.aoneroom.com`) | Huge dub catalog (**en, hi, es, regional**)                      | 1080p                       | Rich multi-lang soft subs                                  | MP4 + HLS  | Zero Cloudflare; ISP-sinkholed locally (needs DoH); web search needs app headers/host RE      | **M**      | No                         |
+| **5**            | **VidUp** (`vidup.to` — used by 🌟 SweetFox & Multi-Server sites)                                                                                | TMDB ID                                                    | `vidup.to` standalone multi-server embed                                  | Multi-server                                | Multi-language on alt lanes                                      | **4K (2160p)**              | External soft subs                                         | HLS        | None (HTTP 200 plain curl); AES client crypto                                                 | **M**      | No                         |
+| **6** _(Alt #5)_ | **MovieBox / Aoneroom** (`movieboxonline.net`, `h5.aoneroom.com` — Dedicated-Server)                                                             | Own search (`subjectId` + `detailPath`; title+year bridge) | `aoneroom.com` / `wefeed-h5-bff` (`istio-envoy`)                          | Single dedicated CDN (`pbcdn.aoneroom.com`) | Huge dub catalog (**en, hi, es, regional**)                      | 1080p                       | Rich multi-lang soft subs                                  | MP4 + HLS  | Zero Cloudflare; ISP-sinkholed locally (needs DoH); web search needs app headers/host RE      | **M**      | No                         |
 
 ### Detailed Notes — Movie / TV Shortlist
 
@@ -86,20 +90,13 @@ Adding these 6 independent backends to Kunai's active Movie/TV roster (`vidlink`
   - Best non-English dub language breadth found in the Movie/TV survey (11 languages in player manifest; FMHY specifically calls out Spanish & Italian dubs on ArrowTV/Cinezo) plus 4K.
 - **Risk / prerequisite:** Player HTML/JS contains Turnstile/Cap references and rotating obfuscated loader filenames (`*-obq1.js`); `api.vidqueen.st/` returned `410` to an unauthenticated bare GET. Confirm during intake RE that the stream endpoint works without interactive Turnstile before coding; build **one** adapter for the family, never multiple.
 
-#### 5. Chillflix (`www.chillflix.pw` — powers ⭐ Chillflix / Toflix / Vuflix)
-
-- **Live evidence (2026-11-27):**
-  - `https://www.chillflix.pw/embed/movie/550` returned HTTP 200 (186 KB, no CF, no Turnstile) advertising **4K** and **French, German, Italian, Portuguese, Spanish, English**.
-  - Next.js chunks expose `/api/movie/{id}` (live-verified HTTP 200 JSON) and `https://chillflix.pw/player-api`.
-- **Stability & maintenance:** Powers three FMHY Star frontends with a unified embed host (`chillflix.pw`). Medium effort to trace the `/player-api` call chain in its Next.js chunks.
-
-#### 6. VidUp (`vidup.to`)
+#### 5. VidUp (`vidup.to`)
 
 - **Live evidence (2026-11-27):**
   - `https://vidup.to/movie/550` returned HTTP 200 (150 KB Next.js SSR, no CF, no Turnstile), 4K-capable, AES-encrypted API exchange, distinct from VidLink/VidRock/VidFast/VidBolt.
 - **Stability & maintenance:** Used as a standalone embed lane on SweetFox and Multi-Server sites. Medium effort (same AES-port + canary pattern as VidRock/VidFast).
 
-#### 7. Watchlist / Alternative #6: MovieBox / Aoneroom (`movieboxonline.net` / `h5.aoneroom.com`) & VixSrc (`vixsrc.to`)
+#### 6. Watchlist / Alternative #5: MovieBox / Aoneroom (`movieboxonline.net` / `h5.aoneroom.com`) & VixSrc (`vixsrc.to`)
 
 - **MovieBox (`aoneroom.com`):** Completely non-Western mobile-app infrastructure (`istio-envoy`, zero Cloudflare, massive Hindi/Spanish/English dub + soft-sub library). Locally ISP-sinkholed (`movieboxonline.net` required DoH → `206.52.20.227`), and `POST /wefeed-h5-bff/web/subject/search` answered HTTP 200 `{"code":0,"message":"ok"}` with empty `items: []` on `h5.aoneroom.com` and `fmoviesunblocked.net` — indicating region/header/signature gating on the web BFF. High strategic value if a short APK/web-header capture unlocks search+play.
 - **VixSrc (`vixsrc.to` / `vixcloud.cc` — powers `StreamingUnity`):** Cleanest dedicated Italian+English dual-audio 1080p/4K HLS embed in the scene, **but** currently returned Cloudflare managed challenge (`403` + `_cf_chl_opt`) even to `curl_cffi chrome124` from this IP. Re-test with `curl_chrome150` or residential egress before investing.
@@ -195,9 +192,9 @@ Each row below is a **distinct upstream streaming backend / CDN ecosystem**. Imp
 | **Atlantic / VidOra (`hls.lol`)** | `api.atlantic.bz`/`.st`, `vidora.ac`, `cdn.hls.lol`, `natsuki.hls.lol`      | **Candidate #2 (M)**                     | 🌟 Atlantic, fprime, Atlas, 🌟 SweetFox (lane)                             |
 | **VidFast**                       | `vidfast.vc` (ex-`.pro`)                                                    | **Candidate #3 (M)**                     | Multi-Server sites (Vidbox, 1Shows, etc.)                                  |
 | **PunkFlix / VidGold**            | `punkflix.net`, `*.vidgold.vip`, `player.cinezo.live`, `proxy3.flikhub.net` | **Candidate #4 (M–L)**                   | 🌟 ArrowTV, Cinezo, FlikHub, 🌟 SweetFox (`VidQueen`/`VidGold`/`VidMario`) |
-| **Chillflix**                     | `chillflix.pw` (`/player-api`)                                              | **Candidate #5 (M)**                     | ⭐ Chillflix, Toflix, Vuflix                                               |
-| **VidUp**                         | `vidup.to`                                                                  | **Candidate #6 (M)**                     | 🌟 SweetFox (lane), Multi-Server sites                                     |
-| **MovieBox / Aoneroom**           | `aoneroom.com`, `wefeed-h5-bff`, `pbcdn.aoneroom.com`                       | **Candidate #7 / Watch (M)**             | MovieBox, 123moviesfree, netnaija.film, fmoviesunblocked                   |
+| **Chillflix**                     | `chillflix.pw` (`/player-api`)                                              | **Rejected (ad-only HLS)**               | ⭐ Chillflix, Toflix, Vuflix                                               |
+| **VidUp**                         | `vidup.to`                                                                  | **Candidate #5 (M)**                     | 🌟 SweetFox (lane), Multi-Server sites                                     |
+| **MovieBox / Aoneroom**           | `aoneroom.com`, `wefeed-h5-bff`, `pbcdn.aoneroom.com`                       | **Candidate #6 / Watch (M)**             | MovieBox, 123moviesfree, netnaija.film, fmoviesunblocked                   |
 | **VixSrc / VixCloud**             | `vixsrc.to`, `vixcloud.cc`                                                  | **Watchlist (CF-gated locally)**         | StreamingUnity (Italian + English dual audio)                              |
 
 ### Anime Lane
@@ -229,10 +226,10 @@ Each row below is a **distinct upstream streaming backend / CDN ecosystem**. Imp
 - **FlyStream (`flystream.net`):** Protected by Anubis (`techaro.lol`) browser proof-of-work anti-bot gate.
 - **BingeBang (`bingebang.sx`), Cno (`cno.to`), Vidbox (`vidbox.wtf`):** Cloudflare Turnstile embedded on entry pages.
 - **PopcornMovies (`popcornmovies.st`), Way2Movies (`way2movies.vip`), Spacedom (`spacedom.live`), NEPU (`nepu.io`), RidoMovies (`ridomovie.to`), HydraHD (`hydrahd.gd`), MultiEmbed (`multiembed.mov`), SuperEmbed (`streamingnow.mov`):** Hard Cloudflare managed challenge (`403` + `_cf_chl_opt`) even with `curl_cffi chrome124` from this network.
-- **Ghostflix (`ghostflix.st`), SweetFox (`sweetfox.st`), ArrowTV (`arrowtv.net`), Cinezo (`cinezo.st`), fprime (`fprime.at`), Toflix (`toflix.co`), Vuflix (`vuflix.co`):** Frontend skins over backends already represented in the shortlist (VidBolt, Atlantic/VidOra, PunkFlix/VidGold, Chillflix, VidUp).
+- **Ghostflix (`ghostflix.st`), SweetFox (`sweetfox.st`), ArrowTV (`arrowtv.net`), Cinezo (`cinezo.st`), fprime (`fprime.at`), Toflix (`toflix.co`), Vuflix (`vuflix.co`):** Frontend skins over backends tracked in the survey (VidBolt, Atlantic/VidOra, PunkFlix/VidGold, Chillflix, VidUp).
 - **LE MOVIE (`lemovie.site`):** Calls `/api/bolt-self/*` (returned HTTP 502 live), 720p cap, redundant with VidBolt.
 - **Aether (`aether.st`) & Basement (`basementx.rest`) (P-Stream forks):** `basementx.rest` unreachable; `aether.st` backend (`backend.raccoonunbutteredbagel.zip`) returns CF 403 and P-Stream relies on browser extensions for core sources.
-- **Mapple (`mapple.fun` / `mapple.uk`):** Clears CF via `curl_cffi`, but session endpoint (`/api/ui/session`) rejected GET (405) behind opaque Next.js chunks; lower ROI than VidBolt/Atlantic/VidFast/Chillflix.
+- **Mapple (`mapple.fun` / `mapple.uk`):** Clears CF via `curl_cffi`, but session endpoint (`/api/ui/session`) rejected GET (405) behind opaque Next.js chunks; lower ROI than VidBolt/Atlantic/VidFast.
 - **Vumeto (`vumeto.live`):** Wraps `megaplay.buzz` (dead 410 per `.docs/provider-dossiers/hianime.md`) plus `aniembed.se`.
 - **Nontongo (`nontongo.win`):** Multi-hop Next.js iframe wrapper (`stream/movie_upcloud/view1.php`) with decoy YouTube iframe and no direct stream JSON.
 - **CineLite (`cinelite.xyz`), AniCine (`anicine.sbs`), Primeshows (`primeshows.org`), 1Shows (`1shows.org`), VidSrc.cc, VidSrc.xyz, VidSrc.icu, AutoEmbed, Embed.su, MoviesAPI, VidPlus, Vidify, CinemaOS:** Connection-dead, timeout, or redirected to dead hosts even via DoH on 2026-11-27.
@@ -264,5 +261,5 @@ Each row below is a **distinct upstream streaming backend / CDN ecosystem**. Imp
    - **Movie/TV:** `atlantic` / `vidora` (`hls.lol`, 4K + 8 audio languages incl. Hindi/Spanish/Japanese) and `vidfast` (4K, 10+ servers, AES-port + canary).
    - **Anime:** `animeparadise` (clean JSON catalog, sub+dub) and `anizone` (origin 1080p HLS + multi-lang soft subs).
 3. **Wave 3 (Catalog Breadth & Origin Redundancy — Difficulty M to M–L):**
-   - **Movie/TV:** `chillflix` (4K + European multi-audio), `vidup` (4K AES), and one adapter for the `punkflix`/`vidgold`/`cinezo` family (if stream API proves Turnstile-free) or `moviebox`/`aoneroom` (for Hindi/regional dub depth).
+   - **Movie/TV:** `vidup` (4K AES), and one adapter for the `punkflix`/`vidgold`/`cinezo` family (if stream API proves Turnstile-free) or `moviebox`/`aoneroom` (for Hindi/regional dub depth).
    - **Anime:** `animeonsen` (stable DASH + native ASS fallback) and `wco` (classic English dub depth via DoH).

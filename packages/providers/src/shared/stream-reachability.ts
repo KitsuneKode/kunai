@@ -1,6 +1,7 @@
 import {
   createDeadlineSignal,
   fetchProbeTarget,
+  probeFailureTarget,
   isGuardedPlatformFetch,
   type StreamReachabilityFetch,
 } from "@kunai/core";
@@ -12,8 +13,10 @@ import {
   isHlsPlaylistUrl,
   parseFirstHlsMediaSegmentPath,
   parseFirstHlsVariantPath,
+  resolveHlsPlaylistUrl,
   resolveHlsSegmentUrl,
 } from "./hls-manifest";
+import { isDefinitiveHttpStatus, isDefinitiveNetworkError } from "./refusal-classification";
 import {
   hasFragmentedMp4Prefix,
   hasImageContainerMagic,
@@ -36,7 +39,18 @@ export type { ProbeFetchOutcome, StreamReachabilityFetch } from "@kunai/core";
 
 export type StreamReachabilityProbeResult =
   | { readonly status: "reachable"; readonly contentType?: string }
-  | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
+  | {
+      readonly status: "unreachable";
+      readonly reason: string;
+      readonly definitive: boolean;
+      /**
+       * Transport and target-guard failures indict the host; HTTP, manifest,
+       * and media evidence indict only the URL that was probed.
+       */
+      readonly refusalScope?: "host" | "url";
+      /** The host whose transport or guard actually failed, when known. */
+      readonly refusalHost?: string;
+    }
   | { readonly status: "timeout" };
 
 export type ProbeStreamReachabilityInput = {
@@ -187,9 +201,7 @@ export async function probeStreamReachability(
 
 /** Provider resolve gates allow slow CDNs through as unverified; only definitive failures block. */
 export function isStreamReachableForResolve(probe: StreamReachabilityProbeResult): boolean {
-  if (probe.status === "reachable" || probe.status === "timeout") {
-    return true;
-  }
+  if (probe.status === "reachable" || probe.status === "timeout") return true;
   return probe.status === "unreachable" && !probe.definitive;
 }
 
@@ -255,7 +267,7 @@ async function probeHlsManifest(
     // fetchPlaylistText is what keeps it pointing somewhere public.
     // Relative variant URIs resolve against the redirected master URL, not the
     // initial URL before redirects.
-    mediaPlaylistUrl = resolveHlsSegmentUrl(master.finalUrl, variantPath);
+    mediaPlaylistUrl = resolveHlsPlaylistUrl(master.finalUrl, variantPath);
     if (parentSignal?.aborted || remaining() <= 0) {
       return { status: "timeout" };
     }
@@ -311,6 +323,8 @@ async function fetchPlaylistText(
   }
 
   const deadline = createDeadlineSignal(parentSignal, remaining());
+  // The hop a body-read failure belongs to: a redirect has already moved it.
+  let failedHop = url;
 
   try {
     const outcome = await fetchProbeTarget({
@@ -327,13 +341,10 @@ async function fetchPlaylistText(
     if (outcome.kind === "blocked") {
       return {
         status: "fail",
-        result: {
-          status: "unreachable",
-          reason: `blocked stream target: ${outcome.reason}`,
-          definitive: true,
-        },
+        result: hostUnreachable(`blocked stream target: ${outcome.reason}`, true, outcome.url),
       };
     }
+    failedHop = outcome.finalUrl;
     const response = outcome.response;
     if (response.status < 200 || response.status >= 300) {
       await response.body?.cancel().catch(() => undefined);
@@ -360,13 +371,10 @@ async function fetchPlaylistText(
       return { status: "fail", result: { status: "timeout" } };
     }
     const message = error instanceof Error ? error.message : String(error);
+    const failed = error instanceof Error ? (probeFailureTarget(error) ?? failedHop) : failedHop;
     return {
       status: "fail",
-      result: {
-        status: "unreachable",
-        reason: message,
-        definitive: isDefinitiveNetworkError(message),
-      },
+      result: hostUnreachable(message, isDefinitiveNetworkError(message), failed),
     };
   } finally {
     deadline.release();
@@ -386,6 +394,7 @@ async function probeHlsMediaSegment(
   }
 
   const deadline = createDeadlineSignal(parentSignal, remaining());
+  let failedHop = url;
 
   try {
     const outcome = await fetchProbeTarget({
@@ -402,12 +411,9 @@ async function probeHlsMediaSegment(
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
-      return {
-        status: "unreachable",
-        reason: `HLS segment blocked: ${outcome.reason}`,
-        definitive: true,
-      };
+      return hostUnreachable(`HLS segment blocked: ${outcome.reason}`, true, outcome.url);
     }
+    failedHop = outcome.finalUrl;
     const response = outcome.response;
     const healthyStatus = (status: number) => (status >= 200 && status < 300) || status === 206;
     if (!healthyStatus(response.status)) {
@@ -472,11 +478,11 @@ async function probeHlsMediaSegment(
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
-    return {
-      status: "unreachable",
-      reason: `HLS segment unreachable: ${message}`,
-      definitive: isDefinitiveNetworkError(message),
-    };
+    return hostUnreachable(
+      `HLS segment unreachable: ${message}`,
+      isDefinitiveNetworkError(message),
+      (error instanceof Error ? probeFailureTarget(error) : undefined) ?? failedHop,
+    );
   } finally {
     deadline.release();
   }
@@ -518,11 +524,7 @@ async function probeHttpStatus(
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
-      return {
-        status: "unreachable",
-        reason: `blocked stream target: ${outcome.reason}`,
-        definitive: true,
-      };
+      return hostUnreachable(`blocked stream target: ${outcome.reason}`, true, outcome.url);
     }
     const response = outcome.response;
     await response.body?.cancel().catch(() => undefined);
@@ -542,11 +544,8 @@ async function probeHttpStatus(
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
-    return {
-      status: "unreachable",
-      reason: message,
-      definitive: isDefinitiveNetworkError(message),
-    };
+    const failed = error instanceof Error ? (probeFailureTarget(error) ?? url) : url;
+    return hostUnreachable(message, isDefinitiveNetworkError(message), failed);
   } finally {
     deadline.release();
   }
@@ -778,7 +777,7 @@ async function probeDirectMedia(
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
-      return { status: "unreachable", reason: "blocked-target", definitive: true };
+      return hostUnreachable("blocked-target", true, outcome.url);
     }
     const response = outcome.response;
     if (response.status >= 300 && response.status < 400) {
@@ -826,56 +825,32 @@ async function probeDirectMedia(
       return { status: "reachable" };
     }
     return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
-  } catch {
+  } catch (error) {
     if (signal.aborted) return { status: "timeout" };
     // No raw cause: a transport message can quote the URL it failed on.
-    return { status: "unreachable", reason: "network-error", definitive: false };
+    const failed = error instanceof Error ? (probeFailureTarget(error) ?? input.url) : input.url;
+    return hostUnreachable("network-error", false, failed);
   }
 }
 
-/**
- * Every 4xx is a refusal, and a refusal is a verdict.
- *
- * 429 was briefly treated as transient on the theory that a CDN throttling a CLI
- * probe says nothing about whether the stream plays. Live evidence says
- * otherwise: VidLink's CDN (`bcdn.hakunaymatata.com`) answers 429 to GET, HEAD
- * and ranged GET alike for every candidate, so letting the probe pass just hands
- * mpv a 587-byte nginx error page instead of a video. The gate exists to stop
- * exactly that, and a provider that fails here lets a working one take over.
- *
- * If a status ever needs to be treated as transient, it needs evidence that the
- * stream actually plays afterwards — a passing probe is not the goal, playback is.
- */
-function isDefinitiveHttpStatus(status: number): boolean {
-  return status >= 400 && status < 500;
+function hostUnreachable(
+  reason: string,
+  definitive: boolean,
+  url: string,
+): StreamReachabilityProbeResult {
+  return {
+    status: "unreachable",
+    reason,
+    definitive,
+    refusalScope: "host",
+    refusalHost: streamUrlHost(url),
+  };
 }
 
-function isDefinitiveNetworkError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("connection refused") ||
-    lower.includes("econnrefused") ||
-    lower.includes("name or service not known") ||
-    lower.includes("getaddrinfo") ||
-    lower.includes("enotfound") ||
-    lower.includes("unable to connect") ||
-    lower.includes("certificate has expired") ||
-    (lower.includes("certificate") && lower.includes("expired")) ||
-    /*
-      An unverifiable chain is as deterministic as an expired one: retrying
-      cannot heal it, and mpv's TLS stack fails the same way against the same
-      trust decision — so the stream must be rejected, not passed through
-      lenient as "maybe a slow CDN". Covers OpenSSL/BoringSSL phrasings:
-      "unable to verify the first certificate", "unable to verify leaf
-      signature", "unable to get local issuer certificate",
-      "self signed certificate in certificate chain".
-    */
-    lower.includes("unable to verify") ||
-    lower.includes("unable to get local issuer") ||
-    lower.includes("self signed certificate") ||
-    lower.includes("certificate verify failed") ||
-    lower.includes("unsupported protocol") ||
-    lower.includes("unknown scheme") ||
-    lower.includes("url using bad/illegal format")
-  );
+export function streamUrlHost(url: string | undefined): string {
+  try {
+    return new URL(url ?? "").host.toLowerCase();
+  } catch {
+    return "";
+  }
 }

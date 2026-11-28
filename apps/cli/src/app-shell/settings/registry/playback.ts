@@ -6,6 +6,7 @@ import {
   AUTO_CLEANUP_GRACE_DAY_OPTIONS,
   CONTINUE_SOURCE_PREFERENCE_OPTIONS,
   HDR_MODE_OPTIONS,
+  MPV_HWDEC_MODE_OPTIONS,
   PRE_PLAY_CONFIRM_SETTINGS_OPTIONS,
   PROVIDER_QUALITY_SETTINGS_OPTIONS,
   QUIT_NEAR_END_BEHAVIOR_OPTIONS,
@@ -77,6 +78,30 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
         // SAFETY: the row's options are HDR_MODE_OPTIONS, the same union HdrMode declares.
         hdrMode: value as typeof config.hdrMode,
       }),
+    },
+    {
+      kind: "enum",
+      id: "mpvHwdec",
+      label: "Hardware decoding",
+      detail:
+        "Probe-select hardware decoding, use an mpv automatic mode/backend, or force software",
+      options: MPV_HWDEC_MODE_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.mpvHwdec,
+      write: (config, value) => ({
+        ...config,
+        // SAFETY: the row's options are MPV_HWDEC_MODE_OPTIONS, the same union the config field declares.
+        mpvHwdec: value as typeof config.mpvHwdec,
+      }),
+    },
+    {
+      kind: "boolean",
+      id: "mpvAvsyncRecovery",
+      label: "A/V sync recovery",
+      detail:
+        "When mpv reports sustained audio/video drift, seek once to the current position to resync",
+      read: (config) => config.mpvAvsyncRecovery,
+      write: (config, value) => ({ ...config, mpvAvsyncRecovery: value }),
     },
     {
       kind: "enum",
@@ -242,7 +267,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       kind: "enum",
       id: "continueSourcePreference",
       label: "Continue source",
-      detail: "Default local-vs-stream behavior on History Continue rows",
+      detail:
+        "Local copy or stream when you continue (Home, History, Calendar, --continue). Ask streams when nobody can answer",
       options: CONTINUE_SOURCE_PREFERENCE_OPTIONS,
       presentation: "submenu",
       read: (config) => config.continueSourcePreference,

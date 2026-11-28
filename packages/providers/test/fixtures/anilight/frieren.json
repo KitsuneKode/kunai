@@ -1,0 +1,79 @@
+{
+  "capturedFrom": "api.anilight.live Frieren episode 1 responses (tokens redacted)",
+  "checkExists": { "exists": true, "slug": "sousou-no-frieren" },
+  "session": { "sessionToken": "redacted-session", "expiresAt": 1795847961911 },
+  "search": [
+    {
+      "id": 156,
+      "slug": "sousou-no-frieren",
+      "anilistId": 154587,
+      "idMal": 52991,
+      "title": {
+        "romaji": "Sousou no Frieren",
+        "english": "Frieren: Beyond Journey's End",
+        "native": "葬送のフリーレン"
+      },
+      "episodes": 28,
+      "subEpisodes": 28,
+      "dubEpisodes": 28,
+      "seasonYear": 2023,
+      "description": "Redacted synopsis",
+      "coverImage": { "large": "https://art.example/redacted.jpg" },
+      "bannerImage": "https://art.example/redacted-banner.jpg",
+      "status": "FINISHED"
+    }
+  ],
+  "watch": {
+    "id": 156,
+    "subEpisodes": 28,
+    "dubEpisodes": 28,
+    "episodes": [
+      {
+        "number": 1,
+        "title": "The Journey's End",
+        "img": "https://art.example/episode-redacted.jpg",
+        "airedAt": "2023-09-29T00:00:00.000Z",
+        "sub": true,
+        "dub": true,
+        "subReleased": true,
+        "dubReleased": true
+      },
+      {
+        "number": 2,
+        "title": "It Didn't Have to Be Magic...",
+        "airedAt": "2023-09-29T00:00:00.000Z",
+        "sub": true,
+        "dub": true
+      }
+    ]
+  },
+  "sources": {
+    "audio": null,
+    "tracks": [
+      {
+        "id": "English",
+        "url": "redacted-caption-token",
+        "kind": "captions",
+        "lang": "English",
+        "label": "English",
+        "default": true
+      },
+      {
+        "id": "Spanish",
+        "url": "redacted-spanish-caption-token",
+        "kind": "captions",
+        "lang": "Spanish",
+        "label": "Spanish",
+        "default": false
+      }
+    ],
+    "sources": [{ "url": "redacted-media-token", "quality": "1080p", "type": "mp4" }],
+    "chapters": [],
+    "expiresAt": 1795783173000,
+    "refreshAfter": 1795765173590,
+    "issuedAt": 1795761573590,
+    "animeId": 156,
+    "provider": "kira",
+    "streamProxies": ["https://media.satella.buzz"]
+  }
+}

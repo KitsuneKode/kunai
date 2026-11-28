@@ -209,6 +209,7 @@ export function InputField({
   ghostSuffix,
   cursorRef,
   dense = false,
+  showHintWhenDense = false,
 }: {
   label: string;
   value: string;
@@ -228,6 +229,8 @@ export function InputField({
   cursorRef?: { current: number };
   /** Compact narrow-terminal chrome: field icon, input row, and underline only. */
   dense?: boolean;
+  /** Dense chrome normally spends its rows on the field; critical onboarding guidance may keep one. */
+  showHintWhenDense?: boolean;
 }) {
   const { cols } = useShellDimensions();
   const fieldWidth = Math.max(20, maxWidth ?? (terminalWidthProp ?? cols) - 8);
@@ -293,6 +296,13 @@ export function InputField({
             {"─".repeat(Math.max(4, fieldWidth))}
           </Text>
         </Box>
+        {showHintWhenDense && renderedHint ? (
+          <Box marginTop={1}>
+            <Text color={palette.dim} dimColor>
+              {renderedHint}
+            </Text>
+          </Box>
+        ) : null}
       </Box>
     );
   }

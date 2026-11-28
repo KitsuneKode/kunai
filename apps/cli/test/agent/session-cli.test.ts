@@ -1,19 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { getKunaiPaths } from "@kunai/storage";
-
-import { storageRootEnv } from "../helpers/storage-env";
 import {
   createIsolatedCliProfile,
   disposeIsolatedCliProfile,
@@ -131,18 +120,7 @@ describe("held session CLI", () => {
       const name = `custom-stop-${process.pid}`;
       const owner = createIsolatedCliProfile(name);
       const rootDir = join(owner.rootDir, "caller-owned");
-      const env = storageRootEnv(rootDir);
-      const paths = getKunaiPaths({ homeDir: rootDir, env });
-      for (const dir of [paths.configDir, paths.dataDir, paths.cacheDir])
-        mkdirSync(dir, { recursive: true });
-      const profile = {
-        rootDir,
-        env,
-        paths,
-        configHome: paths.configDir,
-        dataHome: paths.dataDir,
-        cacheHome: paths.cacheDir,
-      };
+      const profile = createIsolatedCliProfile(name, rootDir);
       const s = await startTmuxSession({ name, profile, command: "--offline", keepProfile: true });
       const statePath = tmuxSessionStatePath(name);
       const state = {

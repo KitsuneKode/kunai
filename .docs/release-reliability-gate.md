@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T10:16:34Z"
+lastReviewed: "2026-11-28T06:22:13Z"
 ---
 
 # Kunai Release Reliability Gate
@@ -148,6 +148,12 @@ then verify cancellation, reader release, removal and retry. They run on all
 platforms without a parked asynchronous stream pull or wall-clock race.
 
 ## Native Installer Activation Gate
+
+The Bash and PowerShell installers run the versioned binary with `--version`
+before publishing the active manifest. The check times out after 10 seconds,
+uses the CLI's read-only version path, and disables analytics. A startup
+failure restores the previous launcher and keeps the verified versioned files
+for diagnosis. Alpine needs `libstdc++` and `libgcc` to pass the check.
 
 Activation-lock name contention is retried within its deadline. `EACCES` and
 `EPERM` require evidence of a live holder or a changed lock name before they are

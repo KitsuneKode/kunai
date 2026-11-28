@@ -91,7 +91,15 @@ test("Turbo strict tasks retain analytics suppression even outside CI", async ()
       ],
       {
         cwd: fixture,
-        env: { ...process.env, CI: "0", DO_NOT_TRACK: "1", TURBO_TELEMETRY_DISABLED: "1" },
+        env: {
+          ...process.env,
+          CI: "0",
+          DO_NOT_TRACK: "1",
+          TURBO_TELEMETRY_DISABLED: "1",
+          // Turbo writes telemetry config under an OS-config dir that ignores
+          // HOME/XDG on Windows — pin it into the fixture on every platform.
+          TURBO_CONFIG_DIR_PATH: fixture,
+        },
         stdout: "pipe",
         stderr: "pipe",
       },

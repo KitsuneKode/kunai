@@ -1,3 +1,4 @@
+import { providerOptionsForListShell } from "@/app-shell/overlay-provider-picker";
 import { buildProviderPickerOptions } from "@/app-shell/panel-data";
 import {
   chooseEpisodeFromOptions,
@@ -5,6 +6,7 @@ import {
   chooseSeasonFromOptions,
   type ListShellActionContext,
 } from "@/app-shell/pickers";
+import type { ProviderPickerSources } from "@/app-shell/provider-picker-status";
 import {
   buildSubtitlePickerOptions,
   type SubtitlePickerEntry,
@@ -23,7 +25,6 @@ import { nearestOptionIndex } from "@/domain/session/picker-model";
 import type { EpisodePickerOption, StreamInfo } from "@/domain/types";
 import { scheduleVideasyLazySourceProbesFromContainer } from "@/services/playback/schedule-videasy-lazy-probes";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
-import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 import {
   createSessionPickerId,
@@ -37,18 +38,19 @@ export async function openProviderPicker({
   currentProvider,
   providers,
   actionContext,
-  getProviderHealth,
-}: {
+  ...sources
+}: ProviderPickerSources & {
   currentProvider: string;
   providers: readonly import("@/domain/types").ProviderMetadata[];
   actionContext?: ListShellActionContext;
-  getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
 }): Promise<string | null> {
   return chooseFromListShell({
     title: "Choose provider",
     subtitle: `Current provider ${currentProvider}`,
     actionContext,
-    options: buildProviderPickerOptions({ providers, currentProvider, getProviderHealth }),
+    options: providerOptionsForListShell(
+      buildProviderPickerOptions({ providers, currentProvider, ...sources }),
+    ),
   });
 }
 

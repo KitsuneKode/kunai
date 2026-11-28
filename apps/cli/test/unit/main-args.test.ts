@@ -418,6 +418,24 @@ test("mpv config flags are independent and default to unset", () => {
   expect(parseArgs(["node", "kunai", "--mpv-clean"]).mpv?.noUserConfig).toBeUndefined();
 });
 
+test("--mpv-hwdec and --mpv-avsync-recovery parse as per-run playback controls", () => {
+  expect(parseArgs(["--mpv-hwdec", "OFF"]).mpvHwdec).toBe("off");
+  expect(parseArgs(["--mpv-hwdec", "auto"]).mpvHwdec).toBe("auto");
+  expect(parseArgs(["--mpv-hwdec", "auto-safe"]).mpvHwdec).toBe("auto-safe");
+  expect(parseArgs(["--mpv-hwdec", "videotoolbox"]).mpvHwdec).toBe("videotoolbox");
+  expect(parseArgs(["--mpv-hwdec", "D3D11VA"]).mpvHwdec).toBe("d3d11va");
+  expect(parseArgs([]).mpvHwdec).toBeUndefined();
+  expect(parseArgs(["--mpv-avsync-recovery", "off"]).mpvAvsyncRecovery).toBe(false);
+  expect(parseArgs(["--mpv-avsync-recovery", "on"]).mpvAvsyncRecovery).toBe(true);
+  expect(parseArgs([]).mpvAvsyncRecovery).toBeUndefined();
+  expect(() => parseArgs(["--mpv-hwdec", "cuda"])).toThrow(CliUsageError);
+  expect(() => parseArgs(["--mpv-avsync-recovery", "maybe"])).toThrow(CliUsageError);
+
+  const help = buildCliHelpText("test");
+  expect(help).toContain("--mpv-hwdec <mode>");
+  expect(help).toContain("--mpv-avsync-recovery <on|off>");
+});
+
 test("parseArgs supports -e/--episode and --season", () => {
   const anime = parseArgs(["-a", "-S", "Frieren", "-e", "5"]);
   expect(anime.episode).toBe(5);
@@ -471,8 +489,11 @@ test("`kunai addons` rejects an unsupported flag with exit 2 and never touches c
   const root = mkdtempSync(join(tmpdir(), "kunai-addons-flag-"));
   try {
     const env = { ...process.env, ...storageRootEnv(root) };
-    const { configDir, configPath } = getKunaiPaths({ env });
+    const { configDir, configPath, profileDir } = getKunaiPaths({ env });
     mkdirSync(configDir, { recursive: true });
+    // Seeding config first makes the root nonempty: the profile gate only
+    // accepts it once the fixture claims ownership.
+    writeFileSync(join(profileDir!, ".kunai-profile"), "kunai-profile-v1\n");
     const seeded = JSON.stringify({
       stremioAddons: [{ url: "https://a.example.com/SECRETTOKEN/manifest.json", name: "Alpha" }],
     });

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   applyHistorySelectionProvider,
+  continueTitleFromHistorySelection,
   episodeFromHistorySelection,
   prepareReplayTitleForProvider,
   selectContinueHistoryEntry,
@@ -175,6 +176,90 @@ describe("launch entry helpers", () => {
       }),
     });
     expect(upgradeTitleInfoStructure(episodicAnime, "series")).toBe(episodicAnime);
+  });
+
+  test("youtube replay keeps the continue launch source and explicit source answer", async () => {
+    type YoutubeReplayState = {
+      mode: "series" | "youtube";
+      provider: string;
+      defaultProviders: { series: string; anime: string; youtube: string };
+    };
+    let state: YoutubeReplayState = {
+      mode: "series",
+      provider: "vidking",
+      defaultProviders: { series: "vidking", anime: "allanime", youtube: "youtube" },
+    };
+    const entry = history({
+      mediaKind: "video",
+      providerId: "youtube",
+      titleId: "youtube:abc123",
+      externalIds: { youtubeId: "abc123" },
+    });
+    const title: import("@/domain/types").TitleInfo = {
+      ...continueTitleFromHistorySelection({ titleId: entry.titleId, entry }),
+      playbackSourceOverride: "online",
+    };
+
+    // SAFETY: deliberately partial test stub — preparation only exercises the members below.
+    const prepared = await prepareReplayTitleForProvider(
+      {
+        config: {} as never,
+        historyRepository: {} as never,
+        providerRegistry: { get: () => undefined },
+        stateManager: {
+          getState: () => state,
+          dispatch: (transition: { type: string; mode?: "youtube"; provider?: string }) => {
+            if (transition.type === "SET_MODE" && transition.mode && transition.provider) {
+              state = { ...state, mode: transition.mode, provider: transition.provider };
+            }
+          },
+        },
+      } as never,
+      title,
+      entry,
+    );
+
+    expect(prepared).toMatchObject({
+      launchSource: "continue",
+      playbackSourceOverride: "online",
+    });
+  });
+
+  test("anime replay keeps the explicit source answer through provider-native preparation", async () => {
+    const state = {
+      mode: "anime" as const,
+      provider: "allanime",
+      defaultProviders: { series: "vidking", anime: "allanime", youtube: "youtube" },
+    };
+
+    // SAFETY: deliberately partial test stub — preparation only exercises the members below.
+    const prepared = await prepareReplayTitleForProvider(
+      {
+        config: { animeLanguageProfile: { audio: "original", subtitle: "en" } } as never,
+        historyRepository: {} as never,
+        providerRegistry: {
+          get: () => ({ metadata: { catalogIdentity: "provider-native" } }),
+        },
+        stateManager: {
+          getState: () => state,
+          dispatch: () => {},
+        },
+      } as never,
+      {
+        id: "allanime-show-id",
+        type: "series",
+        name: "Anime",
+        isAnime: true,
+        launchSource: "continue",
+        playbackSourceOverride: "online",
+      },
+    );
+
+    expect(prepared).toMatchObject({
+      id: "allanime-show-id",
+      launchSource: "continue",
+      playbackSourceOverride: "online",
+    });
   });
 
   test("anime replay restores the anime default provider instead of the active YouTube provider", async () => {

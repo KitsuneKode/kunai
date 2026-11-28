@@ -4,13 +4,18 @@ import { dirname as nodeDirname, win32 } from "node:path";
 
 const { W_OK } = fsConstants;
 
-import { detectPlayerPlatform } from "@/domain/playback/player-choice";
 import {
-  defaultAndroidIntentRuntime,
-  resolveAndroidIntentCommand,
-  type AndroidIntentRuntime,
-} from "@/infra/player/android-intent-launcher";
-import type { CapabilitySnapshot, CurlCapability } from "@/ui";
+  detectPlayerPlatform,
+  resolvePlayerMode,
+  type InstalledPlayers,
+  type PlayerChoice,
+  type PlayerMode,
+} from "@/domain/playback/player-choice";
+import type { AndroidIntentRuntime } from "@/infra/player/android-intent-launcher";
+import { detectInstalledPlayers } from "@/infra/player/installed-players";
+import type { CapabilitySnapshot } from "@/ui";
+import type { MpvHwdecMode } from "@kunai/config";
+import { joinerForNodePlatform } from "@kunai/storage";
 
 import {
   inspectInstallManifest,
@@ -21,11 +26,14 @@ import { detectInstallMethod } from "../install-method";
 import { findKunaiPathCandidates } from "../path-candidates";
 import { detectPlatform, resolveReleaseBinaryTarget } from "../platform-assets";
 import { parseCanonicalVersion } from "../version";
+import { androidPlayerHandoffFinding } from "./android-player-handoff-finding";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
+import { isProcessAlive } from "./lock-owner-identity";
+import { mpvHwdecPlaybackReport } from "./mpv-hwdec-report";
 import { isMuslEnvironmentSync } from "./musl";
 import { listInstallTransactions, type InstallTransactionRecord } from "./transaction";
 import { inspectVersionLock, type VersionLockInspection } from "./version-lock";
@@ -103,6 +111,12 @@ export interface DoctorReport {
   readonly transactions: readonly InstallTransactionRecord[];
   readonly platform: DoctorPlatformInfo;
   readonly dependencies: CapabilitySnapshot;
+  readonly playback?: {
+    readonly playerKind: string;
+    readonly mpvHwdec: MpvHwdecMode;
+    /** Value passed as `--hwdec`; null means Kunai emits no override. */
+    readonly mpvHwdecEmitted: string | null;
+  };
   readonly storage: readonly DoctorStorageInfo[];
   readonly findings: readonly DoctorFinding[];
 }
@@ -117,8 +131,16 @@ export type BuildDoctorReportInput = {
   readonly fileExists?: (path: string) => boolean;
   readonly inspectManifest?: () => Promise<InstallManifestInspection>;
   readonly probeCapabilities?: (options: {
-    readonly requireMpv: boolean;
+    readonly playerMode: PlayerMode;
   }) => Promise<CapabilitySnapshot>;
+  /** Effective configured/flagged player choice; auto when omitted. */
+  readonly playerChoice?: PlayerChoice;
+  /** Discovery seam for `--player auto`; defaults to real executable discovery. */
+  readonly installedPlayers?: InstalledPlayers;
+  /** Already-resolved player mode seam for callers that compose it upstream. */
+  readonly playerMode?: PlayerMode;
+  /** Configured managed-mpv hardware decode policy; defaults to no Kunai override. */
+  readonly mpvHwdecMode?: MpvHwdecMode;
   readonly probeStorage?: () => Promise<readonly DoctorStorageInfo[]>;
   /** Environment seam for Android/Termux detection. Defaults to process.env. */
   readonly env?: Readonly<Record<string, string | undefined>>;
@@ -226,22 +248,17 @@ async function inspectLauncher(
   }
 }
 
-function isProcessAlive(pid: number): boolean {
-  if (pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function collectFindings(input: {
   readonly report: Omit<DoctorReport, "findings">;
   readonly detectedKind: string;
+  readonly configDir: string;
 }): DoctorFinding[] {
   const findings: DoctorFinding[] = [];
-  const { report, detectedKind } = input;
+  const { report, detectedKind, configDir } = input;
+  // `report.platform.os` is the release target spelling ("windows", "linux",
+  // "darwin", "android"); joinerForNodePlatform only branches on "win32", and
+  // every other reported OS uses POSIX separators.
+  const joinFor = joinerForNodePlatform(report.platform.os === "windows" ? "win32" : "linux");
   const manifest = report.manifest.status === "loaded" ? report.manifest.manifest : null;
 
   const winner = report.pathCandidates.find((c) => c.winner);
@@ -281,7 +298,7 @@ function collectFindings(input: {
       code: "invalid-manifest",
       message: `install.json is invalid (${report.manifest.reason}).`,
       remediation: [
-        "Back up ~/.config/kunai/install.json.",
+        `Back up ${joinFor(configDir, "install.json")}.`,
         "Reinstall with `kunai install` to rewrite a valid ownership record.",
       ],
     });
@@ -428,7 +445,10 @@ function collectFindings(input: {
     // attempt it and throw mid-request) — both are errors so the exit code is
     // honest for scripts. yt-dlp/ffmpeg/missing-curl stay warnings: each gates
     // one lane, not the product.
-    const core = issue.id === "mpv-missing" || issue.id === "curl-invocation-failed";
+    const core =
+      issue.id === "mpv-missing" ||
+      issue.id === "vlc-missing" ||
+      issue.id === "curl-invocation-failed";
     findings.push({
       severity: issue.severity === "fatal" || core ? "error" : "warning",
       code: issue.id,
@@ -483,12 +503,28 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
   };
 
   const inspectManifest = input.inspectManifest ?? (() => inspectInstallManifest(layout.configDir));
-  // On Android, playback hands videos to VLC or mpv-android; a desktop mpv is
-  // not part of a working install there, so its absence is not an error.
-  const android = detectPlayerPlatform({ platform, env: input.env ?? process.env }) === "android";
+  // One rule, shared with startup and setup: resolve the player first, then
+  // probe the binary that mode actually requires. On Android neither desktop
+  // binary is required because playback is handed to another app.
+  const playerPlatform = detectPlayerPlatform({ platform, env: input.env ?? process.env });
+  const android = playerPlatform === "android";
+  const playerChoice = input.playerChoice ?? "auto";
+  const installedPlayers =
+    playerChoice === "auto" && playerPlatform !== "android"
+      ? (input.installedPlayers ?? detectInstalledPlayers())
+      : undefined;
+  const playerMode =
+    input.playerMode ??
+    (installedPlayers === undefined
+      ? resolvePlayerMode({ choice: playerChoice, platform: playerPlatform })
+      : resolvePlayerMode({
+          choice: playerChoice,
+          platform: playerPlatform,
+          installed: installedPlayers,
+        }));
   const probe =
     input.probeCapabilities ??
-    (async (options: { readonly requireMpv: boolean }) => {
+    (async (options: { readonly playerMode: PlayerMode }) => {
       const { probeCapabilities } = await import("@/ui");
       return probeCapabilities(options);
     });
@@ -586,7 +622,13 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     ...(target ? { targetId: target.id } : {}),
   };
 
-  const dependencies = await probe({ requireMpv: !android });
+  const dependencies = await probe({ playerMode });
+  const mpvHwdecMode = input.mpvHwdecMode ?? "mpv-default";
+  const playback = mpvHwdecPlaybackReport(
+    playerMode.kind,
+    mpvHwdecMode,
+    dependencies.mpvHardwareAccel,
+  );
   const detectedMethod = detectInstallMethod({
     platform,
     fileExists,
@@ -606,172 +648,17 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     transactions,
     platform: platformInfo,
     dependencies,
+    playback,
     storage: await (input.probeStorage ?? (() => probeStorageWritability(layout)))(),
   };
 
-  const findings = collectFindings({ report: base, detectedKind: detectedMethod.kind });
+  const findings = collectFindings({
+    report: base,
+    detectedKind: detectedMethod.kind,
+    configDir: layout.configDir,
+  });
   if (android) findings.push(androidPlayerHandoffFinding(input.androidIntentRuntime));
   return { ...base, findings };
 }
 
-/**
- * Whether Kunai can hand a video to a player on this phone. It needs one of
- * Termux's intent launchers; without one, every play fails before the player.
- */
-function androidPlayerHandoffFinding(
-  runtime: Pick<AndroidIntentRuntime, "which"> = defaultAndroidIntentRuntime,
-): DoctorFinding {
-  const command = resolveAndroidIntentCommand({
-    target: "chooser",
-    url: "https://example.invalid/kunai-doctor-check",
-    runtime: { ...defaultAndroidIntentRuntime, which: runtime.which },
-  });
-  if (command.ok) {
-    return {
-      severity: "info",
-      code: "android-player-handoff",
-      message: `Android playback hands videos to VLC or mpv-android through ${command.launcher}.`,
-      remediation: [],
-    };
-  }
-  return {
-    severity: "warning",
-    code: "android-player-handoff-missing",
-    message:
-      "No Android intent launcher was found, so Kunai cannot hand a video to VLC or mpv-android.",
-    remediation: [
-      "pkg install termux-am",
-      "Install VLC for Android or mpv-android, then run kunai doctor again.",
-    ],
-  };
-}
-
-/** Human-readable doctor output covering the same fields as the JSON report. */
-/**
- * `ok` is reserved for a curl that can actually clear a Cloudflare challenge.
- * Plain curl reports `plain` rather than `ok`, because reporting it as healthy
- * is what let an empty AniDB search look like a working install.
- */
-function describeCurl(curl: CurlCapability): string {
-  if (!curl.present) return "missing";
-  return curl.impersonates ? `ok (${curl.profile ?? "impersonate"})` : "plain (no CF bypass)";
-}
-
-export function formatDoctorReportText(report: DoctorReport): string {
-  const lines: string[] = [];
-  lines.push("Kunai doctor");
-  lines.push(`Generated: ${report.generatedAt}`);
-  lines.push("");
-  lines.push("Running executable");
-  lines.push(`  path: ${report.runningExecutable.path}`);
-  lines.push(`  version: ${report.runningExecutable.version}`);
-  lines.push("");
-  lines.push("PATH candidates");
-  if (!report.pathCandidates.length) {
-    lines.push("  (none found)");
-  } else {
-    for (const candidate of report.pathCandidates) {
-      const mark = candidate.winner ? " (winner)" : "";
-      lines.push(
-        `  ${candidate.order + 1}. ${candidate.path}${mark} [${candidate.observedProvenance}]`,
-      );
-    }
-  }
-  lines.push("");
-  lines.push("Manifest");
-  if (report.manifest.status === "missing") {
-    lines.push("  status: missing");
-  } else if (report.manifest.status === "invalid") {
-    lines.push(`  status: invalid (${report.manifest.reason})`);
-  } else {
-    const m = report.manifest.manifest;
-    lines.push(`  status: loaded${report.manifest.needsMigration ? " (needs migration)" : ""}`);
-    lines.push(`  method: ${m.method}`);
-    lines.push(`  activeVersion: ${m.activeVersion}`);
-    if (m.previousVersion) lines.push(`  previousVersion: ${m.previousVersion}`);
-    lines.push(`  launcherPath: ${m.launcherPath}`);
-    if (m.versionedPath) lines.push(`  versionedPath: ${m.versionedPath}`);
-    if (m.observedProvenance) lines.push(`  observedProvenance: ${m.observedProvenance}`);
-    if (m.artifactSha256) lines.push(`  artifactSha256: ${m.artifactSha256}`);
-  }
-  lines.push("");
-  lines.push("Launcher");
-  lines.push(`  path: ${report.launcher.path}`);
-  lines.push(`  kind: ${report.launcher.kind}`);
-  if (report.launcher.target) lines.push(`  target: ${report.launcher.target}`);
-  lines.push("");
-  lines.push("Versions");
-  if (!report.versions.length) {
-    lines.push("  (none)");
-  } else {
-    for (const version of report.versions) {
-      const flags = [
-        version.active ? "active" : null,
-        version.previous ? "previous" : null,
-        version.verification,
-      ]
-        .filter(Boolean)
-        .join(", ");
-      lines.push(`  ${version.version}: ${version.path} [${flags}]`);
-      if (version.artifactSha256) lines.push(`    sha256: ${version.artifactSha256}`);
-      if (version.detail) lines.push(`    detail: ${version.detail}`);
-    }
-  }
-  lines.push("");
-  lines.push("Locks");
-  if (!report.locks.length) {
-    lines.push("  (none)");
-  } else {
-    for (const lock of report.locks) {
-      lines.push(`  ${lock.version}: ${lock.inspection.status}`);
-    }
-  }
-  lines.push("");
-  lines.push("Transactions");
-  if (!report.transactions.length) {
-    lines.push("  (none)");
-  } else {
-    for (const txn of report.transactions) {
-      lines.push(`  ${txn.id}: ${txn.kind} pid=${txn.pid} started=${txn.startedAt}`);
-    }
-  }
-  lines.push("");
-  lines.push("Platform");
-  lines.push(
-    `  ${
-      [report.platform.os, report.platform.arch, report.platform.libc, report.platform.targetId]
-        .filter(Boolean)
-        .join(" / ") || "unknown"
-    }`,
-  );
-  lines.push("");
-  lines.push("Dependencies");
-  lines.push(
-    // curl reports what it can actually do, not merely that it exists: plain
-    // curl is present nearly everywhere and still gets challenged by Cloudflare,
-    // so `curl=ok` on its own was a misleading line in a health report.
-    `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${describeCurl(report.dependencies.curl)}`,
-  );
-  lines.push("");
-  lines.push("Storage");
-  for (const store of report.storage) {
-    const state = store.writable ? "writable" : "NOT WRITABLE";
-    lines.push(`  ${store.label}: ${store.path} (${store.exists ? state : `${state}, missing`})`);
-  }
-  lines.push("");
-  lines.push("Findings");
-  const severityOrder = { error: 0, warning: 1, info: 2 } as const;
-  const orderedFindings = [...report.findings].sort(
-    (left, right) => severityOrder[left.severity] - severityOrder[right.severity],
-  );
-  for (const finding of orderedFindings) {
-    lines.push(`  [${finding.severity}] ${finding.code}: ${finding.message}`);
-    if (finding.remediation.length) {
-      lines.push("    Remediation:");
-      for (const step of finding.remediation) {
-        lines.push(`      - ${step}`);
-      }
-    }
-  }
-  return `${lines.join("\n")}\n`;
-}
+export { formatDoctorReportText } from "./doctor-text";

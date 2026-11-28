@@ -1,7 +1,7 @@
 ---
 status: approved
 owner: playback-and-distribution
-lastReviewed: "2026-08-27"
+lastReviewed: "2026-11-27"
 ---
 
 # Mobile Terminal Handoff
@@ -291,8 +291,7 @@ Provider-side subprocesses remain capability-driven:
 
 - Android uses `getKunaiPaths()` and the Termux HOME/XDG environment; no
   `~/.config` path is hardcoded.
-- Tests and smokes use isolated `storageRootEnv`; `KUNAI_CONFIG_DIR` is never
-  treated as an override.
+- Tests and smokes isolate storage through `storageRootEnv`.
 - No test or debug run points at the developer's live SQLite databases.
 - Mobile installation and non-interactive paths never enable analytics, create
   an analytics `installId`, or permit a send.

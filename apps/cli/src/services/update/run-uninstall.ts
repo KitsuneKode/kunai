@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
+import { checkDesktopProfile, DesktopProfileError } from "@kunai/storage";
+
 import {
   inspectInstallManifest,
   readInstallManifest,
@@ -12,11 +14,47 @@ import {
   type DetectInstallMethodInput,
   type InstallMethodKind,
 } from "./install-method";
-import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";
+import {
+  getInstallLayoutPaths,
+  sameInstallLauncherPath,
+  uninstallStorageRoots,
+  type InstallLayoutPaths,
+} from "./native-installer/install-layout";
 import { nativeUninstall } from "./native-installer/native-uninstall";
 import { tryAcquireLifecycleLock } from "./native-installer/version-lock";
 
 const PKG = "@kitsunekode/kunai";
+const PRESERVED_USER_DATA =
+  "Kept your config, history, cache, and downloaded videos. Re-run with --purge to delete them.";
+
+export async function runUninstallCommand(purge: boolean): Promise<number> {
+  if (purge && !(await confirmUninstallPurge())) {
+    console.error("Uninstall cancelled.");
+    return 0;
+  }
+  return runUninstall({ purge });
+}
+
+async function confirmUninstallPurge(): Promise<boolean> {
+  const { dataDir } = getInstallLayoutPaths();
+  const downloads = join(dataDir, "downloads");
+  console.error(
+    `This deletes your Kunai config, data, cache, and downloaded videos in ${downloads}.`,
+  );
+  if (!process.stdin.isTTY || !process.stderr.isTTY) return true;
+
+  const { createInterface } = await import("node:readline");
+  const input = createInterface({ input: process.stdin, output: process.stderr });
+  process.stderr.write("Permanently delete them? [y/N] ");
+  try {
+    for await (const answer of input) {
+      return /^y(es)?$/i.test(answer.trim());
+    }
+    return false;
+  } finally {
+    input.close();
+  }
+}
 
 export type UninstallPlan =
   | { kind: "exec"; command: string[] }
@@ -95,23 +133,73 @@ export type RunUninstallOptions = {
 export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
   const layout = opts.layout ?? getInstallLayoutPaths();
   const rmImpl = opts.rmImpl ?? rm;
+
+  // A profile layout must be owned before any manifest is read or lock is
+  // acquired — the marker distinguishes Kunai's profile root from an
+  // unrelated directory the env happens to name.
+  if (layout.profileDir !== undefined) {
+    try {
+      checkDesktopProfile("require", layout.profileDir);
+    } catch (error) {
+      if (!(error instanceof DesktopProfileError)) throw error;
+      console.error(error.message);
+      return 2;
+    }
+  }
+
   const manifest = await readInstallManifest(layout.configDir);
   const channel: InstallMethodKind =
     manifest?.method ??
-    detectInstallMethod({
-      fileExists: existsSync,
-      ...opts.detectInstallMethodInput,
-    }).kind;
-  const plan = planUninstall({
-    channel,
-    binPath: manifest?.launcherPath ?? layout.launcherPath,
-    layout: manifest?.versionedPath ? "versioned" : undefined,
-  });
+    (layout.profileDir !== undefined
+      ? "source"
+      : detectInstallMethod({
+          fileExists: existsSync,
+          ...opts.detectInstallMethodInput,
+        }).kind);
+
+  let plan: UninstallPlan;
+  if (layout.profileDir !== undefined) {
+    if (manifest === null) {
+      plan = {
+        kind: "manual",
+        message: "No native Kunai install is recorded in this profile.",
+      };
+    } else if (manifest.method !== "binary" || !manifest.versionedPath) {
+      // A non-binary or flat manifest under a profile records an experimental
+      // layout uninstall cannot undo: delegating would run an account-wide
+      // remover and trust an arbitrary manifest-specified launcher.
+      plan = {
+        kind: "manual",
+        message:
+          "This profile records an install layout `kunai uninstall` cannot remove. Reinstall into the profile with `kunai install` or the installer script, or remove it manually.",
+      };
+    } else {
+      // The configured launcher wins: install.json's launcherPath is data, not
+      // authority, inside an owned profile.
+      if (!sameInstallLauncherPath(manifest.launcherPath, layout.launcherPath)) {
+        console.error(
+          `Refusing uninstall: install.json launcher ${manifest.launcherPath} disagrees with the profile's configured launcher ${layout.launcherPath}.`,
+        );
+        return 1;
+      }
+      plan = planUninstall({
+        channel,
+        binPath: layout.launcherPath,
+        layout: "versioned",
+      });
+    }
+  } else {
+    plan = planUninstall({
+      channel,
+      binPath: manifest?.launcherPath ?? layout.launcherPath,
+      layout: manifest?.versionedPath ? "versioned" : undefined,
+    });
+  }
 
   if (plan.kind === "manual") {
     if (!opts.purge) {
       console.log(plan.message);
-      console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+      console.log(PRESERVED_USER_DATA);
       return 0;
     }
     const purged = await withPurgeSafeUninstallOwnership(layout, opts.force, async () => {
@@ -168,7 +256,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
     }
     if (removed.status === "purge-failed") return 1;
     if (!opts.purge) {
-      console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+      console.log(PRESERVED_USER_DATA);
     }
     return 0;
   } else if (plan.kind === "native") {
@@ -204,7 +292,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       return 1;
     }
     if (!opts.purge) {
-      console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+      console.log(PRESERVED_USER_DATA);
     }
     return 0;
   } else {
@@ -234,7 +322,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
   }
 
   if (!opts.purge) {
-    console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+    console.log(PRESERVED_USER_DATA);
   }
   return 0;
 }
@@ -262,13 +350,13 @@ async function withPurgeSafeUninstallOwnership<T>(
 }
 
 async function purgeUserRoots(
-  layout: Pick<InstallLayoutPaths, "configDir" | "dataDir" | "cacheDir">,
+  layout: Pick<InstallLayoutPaths, "profileDir" | "configDir" | "dataDir" | "cacheDir">,
   preservePaths: readonly string[] | undefined,
   rmImpl: typeof rm = rm,
 ): Promise<boolean> {
   const preserve = new Set(preservePaths ?? []);
   let success = true;
-  for (const target of [layout.configDir, layout.cacheDir, layout.dataDir]) {
+  for (const target of uninstallStorageRoots(layout)) {
     if (preserve.has(target)) {
       console.log(`Preserved ${target}`);
       continue;

@@ -166,6 +166,10 @@ function assertIsolatedProfile(sidecar: SessionSidecar): void {
     if (!value || realpathSync(value) !== root)
       throw new Error(`session storage root ${key} is not isolated`);
   }
+  const profileDir = profile.env.KUNAI_CONFIG_DIR;
+  if (!profileDir || realpathSync(profileDir) !== join(root, "profile")) {
+    throw new Error("session storage root KUNAI_CONFIG_DIR is not isolated");
+  }
   if (profile.env.KUNAI_CREDENTIAL_BACKEND !== "file") {
     throw new Error("session credential backend must be file; native vaults are account-wide");
   }

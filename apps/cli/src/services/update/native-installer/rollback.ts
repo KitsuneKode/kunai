@@ -11,11 +11,19 @@ import {
 import { parseCanonicalVersion } from "../version";
 import { withActivationLock } from "./activation-lock";
 import {
+  canActivateProfileVersion,
   getInstallLayoutPaths,
+  sameInstallLauncherPath,
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
-import { updateLauncher } from "./launcher";
+import {
+  captureLauncherSnapshot,
+  discardLauncherSnapshot,
+  restoreLauncherSnapshot,
+  updateLauncher,
+  type LauncherSnapshot,
+} from "./launcher";
 import { beginInstallTransaction, finishInstallTransaction } from "./transaction";
 import { inspectVersionLock, withVersionLock } from "./version-lock";
 import { verifyStoredVersion } from "./version-metadata";
@@ -83,6 +91,46 @@ export type RollbackOptions = {
   readonly onActivationAcquireAttempt?: () => void;
 };
 
+type RollbackRefusal = Extract<RollbackExecuteResult, { readonly status: "refused" }>;
+
+/**
+ * Inside a profile the configured launcher is authoritative — a manifest that
+ * names a different launcher is never trusted as a rollback publication.
+ */
+function profileLauncherRefusal(
+  layout: InstallLayoutPaths,
+  manifest: InstallManifest,
+): RollbackRefusal | undefined {
+  if (
+    layout.profileDir === undefined ||
+    sameInstallLauncherPath(manifest.launcherPath, layout.launcherPath)
+  ) {
+    return undefined;
+  }
+  return {
+    status: "refused",
+    code: "ownership-changed",
+    reason: `install.json launcher ${manifest.launcherPath} disagrees with the profile's configured launcher ${layout.launcherPath}`,
+  };
+}
+
+/**
+ * Both halves of a profile rollback failed: publication threw and the launcher
+ * snapshot could not be restored. Surface both errors; when the snapshot is a
+ * file backup, name where it was retained.
+ */
+export function rollbackLauncherRecoveryError(
+  snapshot: LauncherSnapshot,
+  errors: { readonly publicationError: unknown; readonly restoreError: unknown },
+): AggregateError {
+  return new AggregateError(
+    [errors.publicationError, errors.restoreError],
+    `Rollback publication failed: ${String(errors.publicationError)}; launcher restoration failed: ${String(errors.restoreError)}.${
+      snapshot.kind === "file" ? ` Backup retained at ${snapshot.backupPath}.` : ""
+    }`,
+  );
+}
+
 async function listInstalledVersions(
   layout: Pick<InstallLayoutPaths, "versionsDir" | "binaryFileName">,
 ): Promise<string[]> {
@@ -109,6 +157,8 @@ export async function listRollbackCandidates(
   const candidates: RollbackCandidate[] = [];
 
   for (const version of versions) {
+    // Payloads too old to infer their profile can never be rollback targets.
+    if (!canActivateProfileVersion(layout, version)) continue;
     const verification = await verifyStoredVersion(layout, version);
     if (verification.status !== "verified") continue;
 
@@ -223,6 +273,8 @@ export async function planRollback(
       reason: `Rollback is only supported for native binary installs (found ${manifest.method})`,
     };
   }
+  const launcherRefusal = profileLauncherRefusal(layout, manifest);
+  if (launcherRefusal) return launcherRefusal;
 
   let targetVersion: string;
   if (options.to !== undefined) {
@@ -250,6 +302,14 @@ export async function planRollback(
       status: "refused",
       code: "already-active",
       reason: `Version ${targetVersion} is already active`,
+    };
+  }
+
+  if (!canActivateProfileVersion(layout, targetVersion)) {
+    return {
+      status: "refused",
+      code: "not-candidate",
+      reason: "Windows profile installs require Kunai 0.4.0 or later.",
     };
   }
 
@@ -347,6 +407,12 @@ export async function executeRollback(
                   reason: "Install ownership changed after rollback planning; refusing activation",
                 };
               }
+              // Inside a profile the configured launcher is authoritative;
+              // a manifest pointing elsewhere is refused, not trusted.
+              const launcherRefusal = profileLauncherRefusal(layout, manifest);
+              if (launcherRefusal) return launcherRefusal;
+              const launcherPath =
+                layout.profileDir !== undefined ? layout.launcherPath : manifest.launcherPath;
               if (manifest.activeVersion === candidate.version) {
                 return {
                   status: "refused" as const,
@@ -355,22 +421,28 @@ export async function executeRollback(
                 };
               }
               const previousLauncherTarget =
-                (await readLauncherTarget(manifest.launcherPath)) ??
+                (await readLauncherTarget(launcherPath)) ??
                 manifest.versionedPath ??
                 versionBinaryPath(layout, manifest.activeVersion);
-
-              await updateLauncher({
-                launcherPath: manifest.launcherPath,
-                versionPath: versionBinaryPath(layout, reverify.metadata.version),
-              });
+              const profileSnapshot =
+                layout.profileDir === undefined
+                  ? undefined
+                  : await captureLauncherSnapshot(launcherPath);
+              let preserveProfileSnapshot = false;
 
               try {
+                await updateLauncher({
+                  launcherPath,
+                  versionPath: versionBinaryPath(layout, reverify.metadata.version),
+                  profileVersion:
+                    layout.profileDir === undefined ? undefined : reverify.metadata.version,
+                });
                 await writeInstallManifestUnderActivation(
                   {
                     method: "binary",
                     activeVersion: reverify.metadata.version,
                     previousVersion: manifest.activeVersion,
-                    launcherPath: manifest.launcherPath,
+                    launcherPath,
                     versionedPath: versionBinaryPath(layout, reverify.metadata.version),
                     downloadBaseUrl: manifest.downloadBaseUrl,
                     target: reverify.metadata.target,
@@ -397,13 +469,25 @@ export async function executeRollback(
                   },
                   layout,
                 );
-              } catch (manifestError) {
-                await restoreLauncher(
-                  manifest.launcherPath,
-                  previousLauncherTarget,
-                  process.platform,
-                );
-                throw manifestError;
+              } catch (error) {
+                if (profileSnapshot) {
+                  try {
+                    await restoreLauncherSnapshot(profileSnapshot);
+                  } catch (restoreError) {
+                    preserveProfileSnapshot = true;
+                    throw rollbackLauncherRecoveryError(profileSnapshot, {
+                      publicationError: error,
+                      restoreError,
+                    });
+                  }
+                } else {
+                  await restoreLauncher(launcherPath, previousLauncherTarget, process.platform);
+                }
+                throw error;
+              } finally {
+                if (profileSnapshot && !preserveProfileSnapshot) {
+                  await discardLauncherSnapshot(profileSnapshot).catch(() => {});
+                }
               }
 
               return {
@@ -443,6 +527,11 @@ export async function executeRollback(
     return locked;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // A recovery AggregateError carries two real failures; classifying either
+    // as locked/missing/corrupt would misreport what actually happened.
+    if (error instanceof AggregateError) {
+      return { status: "failed", error: message };
+    }
     if (/locked|(?:Install|Activation) lock held/i.test(message)) {
       return {
         status: "refused",

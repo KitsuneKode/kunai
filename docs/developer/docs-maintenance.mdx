@@ -49,21 +49,21 @@ bun run --cwd apps/docs build
 
 ## Codegen and drift tests
 
-`apps/docs/scripts/sync-code-metadata.ts` writes `lib/generated-metadata.json` from the CLI registry. Drift tests in `apps/docs/test/drift.test.ts` and `apps/docs/test/seo.test.ts` guard provider order, command counts, link hygiene, SEO uniqueness, and payload parity against a fresh build. Source fingerprints (`cliSourceFingerprint`, `docsContentFingerprint`, `featureStatusRevision`) moved to the gitignored `lib/generated-provenance.json` sidecar: they re-hash on every unrelated edit, which made every pair of PRs conflict on the committed file, while the freshness gate needs only the content comparison.
+`apps/docs/scripts/sync-code-metadata.ts` writes `lib/generated-metadata.json` from the CLI registry, provider manifests, config defaults, player selection types, and release targets. Drift tests in `apps/docs/test/drift.test.ts` and `apps/docs/test/seo.test.ts` guard provider order, command counts, link hygiene, SEO uniqueness, and payload parity against a fresh build. Source fingerprints (`cliSourceFingerprint`, `docsContentFingerprint`, `featureStatusRevision`) moved to the gitignored `lib/generated-provenance.json` sidecar: they re-hash on every unrelated edit, which made every pair of PRs conflict on the committed file, while the freshness gate needs only the content comparison.
 
 `apps/docs/scripts/sync-repo-content.ts` bakes the monorepo files the site renders but must not read at request time (`.release/*.json`, the troubleshooting FAQ parsed out of `docs/`, and the OG mascot PNG) into `lib/generated-release-notes.json`, `lib/generated-troubleshooting-faq.json`, and `lib/generated-mascot.json`. Reading those from disk inside a route made Turbopack trace the whole workspace into every function's NFT list; the runtime now touches no filesystem. `scripts/check-codegen-freshness.ts` fails when any generated file drifts from its source.
 
-Run `bun run --cwd apps/docs generate` after changing commands, providers, help text, `docs/feature-status.yaml`, `docs/users/troubleshooting.mdx`, `docs/troubleshooting-symptoms.yaml`, or `.release/`.
+Run `bun run --cwd apps/docs generate` after changing commands, providers, provider defaults, player choices, release targets, help text, `docs/feature-status.yaml`, `docs/users/troubleshooting.mdx`, `docs/troubleshooting-symptoms.yaml`, or `.release/`. Run `bun run verify:docs-codegen` from the repo root to fail on stale committed output without rewriting it.
 
 ### Truth layers (L0–L4)
 
-| Layer            | Source                                                            | Guard                                                                      |
-| ---------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| **L0 Codegen**   | `bootstrap-providers.ts`, manifests, command registry, `cli-args` | `generate`, `check-codegen-freshness.ts`, payload drift tests              |
-| **L1 Editorial** | `docs/feature-status.yaml`                                        | enum tests, `<FeatureStatusTable />`                                       |
-| **L2 Prose**     | `docs/users/*.mdx`                                                | link hygiene, promotion manifest, no hardcoded provider lists              |
-| **L3 Agent**     | `.docs/*`, `.plans/*`                                             | never link from published docs; promote via `docs/promotion-manifest.yaml` |
-| **L4 Release**   | CHANGELOG, `.release/`                                            | `release-checklist.mdx`, `release:notes:check`                             |
+| Layer            | Source                                                                                                          | Guard                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **L0 Codegen**   | provider registration/manifests, config defaults, command registry, `cli-args`, player choices, release targets | `generate`, `verify:docs-codegen`, payload drift tests                     |
+| **L1 Editorial** | `docs/feature-status.yaml`                                                                                      | enum tests, `<FeatureStatusTable />`                                       |
+| **L2 Prose**     | `docs/users/*.mdx`                                                                                              | link hygiene, promotion manifest, no hardcoded provider lists              |
+| **L3 Agent**     | `.docs/*`, `.plans/*`                                                                                           | never link from published docs; promote via `docs/promotion-manifest.yaml` |
+| **L4 Release**   | CHANGELOG, `.release/`                                                                                          | `release-checklist.mdx`, `release:notes:check`                             |
 
 **Rule:** Code wins for behavior. YAML wins for product posture. Prose explains; it does not duplicate L0 tables.
 
