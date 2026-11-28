@@ -751,7 +751,7 @@ describe("release workflow candidate-before-publication contract", () => {
   });
 
   test("trusted publication pins compatible Node and npm and prints both versions", () => {
-    expect(release).toContain('RELEASE_NODE_VERSION: "22.14.0"');
+    expect(release).toContain('RELEASE_NODE_VERSION: "22.18.0"');
     expect(release).toContain('RELEASE_NPM_VERSION: "11.5.1"');
     for (const job of [candidate(), publish()]) {
       expect(job).toContain("node-version: ${{ env.RELEASE_NODE_VERSION }}");
