@@ -376,9 +376,10 @@ export function DownloadManagerContent({
   const suspended = useRootContentSuspended();
   useInput(
     (input, key) => {
+      const confirmState = confirm.getState();
       if (key.escape) {
         const layers: EscLayer[] = [
-          ...(confirm.state.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
+          ...(confirmState.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
           { kind: "overlay" },
         ];
         if (resolveEscStack(layers) === "cancel-confirmation") {
@@ -388,9 +389,9 @@ export function DownloadManagerContent({
         }
         return;
       }
-      if (confirm.state.kind === "executing") return;
-      if (confirm.state.kind !== "idle") {
-        if (confirm.state.kind === "armed" && input.toLowerCase() === "y") {
+      if (confirmState.kind === "executing") return;
+      if (confirmState.kind !== "idle") {
+        if (confirmState.kind === "armed" && input.toLowerCase() === "y") {
           const confirmation = confirm.transition({ type: "confirm" });
           const effect = confirmation.effect;
           if (effect) {

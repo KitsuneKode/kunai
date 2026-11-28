@@ -10,6 +10,8 @@ import {
 
 export type ConfirmStripController = {
   readonly state: ConfirmStripState;
+  /** Read the ref-authoritative state inside an input handler; `state` remains the render snapshot. */
+  readonly getState: () => ConfirmStripState;
   /** Apply one pure transition and return the transition (including any execute effect). */
   readonly transition: (action: ConfirmStripAction) => ConfirmStripTransition;
   readonly reset: () => void;
@@ -33,5 +35,9 @@ export function useConfirmStripController(): ConfirmStripController {
     stateRef.current = idleConfirmStripState;
     setState(idleConfirmStripState);
   }, []);
-  return useMemo(() => ({ state, transition, reset }), [state, transition, reset]);
+  const getState = useCallback(() => stateRef.current, []);
+  return useMemo(
+    () => ({ state, getState, transition, reset }),
+    [state, getState, transition, reset],
+  );
 }

@@ -1480,7 +1480,7 @@ export function RootOverlayShell({
     setSelectedIndex,
     setOverlayStatus: (status) => setOverlayStatus(status),
     onRedraw,
-    confirmState: historyConfirm.state,
+    confirmState: historyConfirm.getState(),
     transitionConfirm: historyConfirm.transition,
     confirmationVisibleIds: historyConfirmationVisibleIds,
     filterQuery,
@@ -1501,7 +1501,7 @@ export function RootOverlayShell({
     const cancelActive = isOverlayCancelActive({
       overlay,
       pickerFilterQuery,
-      historyConfirmationActive: historyConfirm.state.kind !== "idle",
+      historyConfirmationActive: historyConfirm.getState().kind !== "idle",
     });
 
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -1619,13 +1619,12 @@ export function RootOverlayShell({
       }
       return;
     }
-    if (key.escape && historyFilterFocused && !filterQuery) return setHistoryFilterOwner(null);
     if (key.escape) {
       const escLayers: EscLayer[] = [];
-      if (overlay.type === "history" && historyConfirm.state.kind !== "idle") {
+      if (overlay.type === "history" && historyConfirm.getState().kind !== "idle") {
         escLayers.push({ kind: "confirm" });
       }
-      if (overlay.type === "queue" && queueConfirm.state.kind !== "idle") {
+      if (overlay.type === "queue" && queueConfirm.getState().kind !== "idle") {
         escLayers.push({ kind: "confirm" });
       }
       if (overlay.type === "notifications" && notificationPlayConfirm) {

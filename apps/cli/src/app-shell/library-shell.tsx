@@ -329,12 +329,13 @@ function LibraryTab({
 
   useInput(
     (input, key) => {
+      const confirmState = confirm.getState();
       priorPointerKey.current = null;
       // Esc is resolved in one place: an armed destructive action outranks a
       // non-empty filter, and an empty filter focus is not a layer at all.
       if (key.escape) {
         const layers: EscLayer[] = [
-          ...(confirm.state.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
+          ...(confirmState.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
           { kind: "filter", query: filterQuery },
           { kind: "overlay" },
         ];
@@ -347,9 +348,9 @@ function LibraryTab({
         if (action === "close-overlay") onClose();
         return;
       }
-      if (confirm.state.kind === "executing") return;
-      if (confirm.state.kind !== "idle") {
-        if (confirm.state.kind === "armed" && input.toLowerCase() === "y") {
+      if (confirmState.kind === "executing") return;
+      if (confirmState.kind !== "idle") {
+        if (confirmState.kind === "armed" && input.toLowerCase() === "y") {
           const confirmation = confirm.transition({ type: "confirm" });
           const effect = confirmation.effect;
           if (!effect) return;

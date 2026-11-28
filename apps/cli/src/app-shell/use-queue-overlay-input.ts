@@ -96,9 +96,10 @@ export function handleQueueOverlayInput(
   const sel = rows.length === 0 ? -1 : Math.min(ctx.selectedIndex, rows.length - 1);
   const row = sel >= 0 ? rows[sel] : undefined;
 
-  if (ctx.confirm.state.kind !== "idle") {
-    if (ctx.confirm.state.kind === "executing") return "handled";
-    if (ctx.confirm.state.kind === "armed" && input.toLowerCase() === "y") {
+  const confirmState = ctx.confirm.getState();
+  if (confirmState.kind !== "idle") {
+    if (confirmState.kind === "executing") return "handled";
+    if (confirmState.kind === "armed" && input.toLowerCase() === "y") {
       const confirmation = ctx.confirm.transition({ type: "confirm" });
       if (confirmation.effect) executeQueueConfirmation(ctx, confirmation.effect);
       return "handled";

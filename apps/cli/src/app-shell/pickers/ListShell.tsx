@@ -248,13 +248,14 @@ export function ListShell<T>({
   }
 
   useInput((input, key) => {
+    const confirmState = confirm.getState();
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
 
     if (key.escape) {
       const layers: EscLayer[] = [
-        ...(confirm.state.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
+        ...(confirmState.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
         ...(commandMode
           ? [{ kind: "prompt" } as const]
           : [{ kind: "filter", query: filterQuery } as const, { kind: "picker" } as const]),
@@ -271,9 +272,9 @@ export function ListShell<T>({
       return;
     }
 
-    if (confirm.state.kind !== "idle") {
-      if (confirm.state.kind === "executing") return;
-      if (confirm.state.kind === "armed" && input.toLowerCase() === "y") {
+    if (confirmState.kind !== "idle") {
+      if (confirmState.kind === "executing") return;
+      if (confirmState.kind === "armed" && input.toLowerCase() === "y") {
         const confirmation = confirm.transition({ type: "confirm" });
         const targetId = confirmation.effect?.targetId;
         const selected = filteredOptions.find((option) => listShellOptionKey(option) === targetId);
