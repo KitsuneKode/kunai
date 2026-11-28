@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T13:32:51Z"
+lastReviewed: "2026-11-28T14:41:44Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -188,6 +188,16 @@ sources, then one compatible provider, within a per-episode attempt budget:
   bandwidth or a missing HEVC decoder would fail the same way on the next
   source, so the cap is not per-source. The pin is in memory only, like every
   automatic failover.
+- Each switch publishes a `PlaybackFailoverNotice` (`playbackFailover` on
+  session state). Labels are provider or source display names resolved in
+  `app/playback/playback-failover-copy.ts`. A startup switch stores no
+  timestamp. The shell renders that notice through `FailoverBanner` and does
+  not parse the OSD string.
+- When the attempt budget is spent, post-play opens the playback-issue panel
+  (`Playback issue`, status `issue`, progress not marked watched, `[r] recover`).
+  It does not open Tracks. Tracks stays on `[o]` from that panel. Player failure
+  classes live in `domain/playback/playback-failure-class.ts`; the player
+  classifier only maps events into that union.
 
 ### Mid-playback failover
 
@@ -203,7 +213,8 @@ marks the result `suspectedDeadStream`. From there it is the startup path above:
 the URL is blocked, sources are walked, a 4K rung steps down, then one provider
 hop, and every attempt starts at `recoveryStartIntent`. That is the reached
 position without a prompt, or the attempt's own intended start when the failed
-source never reached it. A provider hop the user asks for (⇧F) still offers the
+source never reached it. A mid-stream notice keeps that position (`preservedSeconds`)
+and uses tone `warn` while another named provider or source remains. Publishing that notice sets `failoverAwaitingPlayback`. The notice stays through the publish, including when status is already `playing`, and the next `SET_PLAYBACK_STATUS` of `playing` clears it. A startup notice with no destination (`toLabel` null, error tone) does not set the flag: it stays until the user acts or playback leaves (`idle` or `finished`). A provider hop the user asks for (⇧F) still offers the
 position as a prompt, since another provider's cut can differ. `recoveryMode:
 "manual"` never hops providers automatically.
 

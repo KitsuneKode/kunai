@@ -20,11 +20,15 @@ export type ListShellActionContext = {
   readonly footerMode?: "detailed" | "minimal";
 };
 
+export type ListShellFilterPreference = "auto" | "always" | "never";
+
 export type ShellOption<T> = {
   readonly value: T;
   /** Stable row identity for destructive confirmation; labels are the fallback. */
   readonly id?: string;
   readonly label: string;
+  /** Compact-mode accelerator. Digits 1-9 also select rows positionally. */
+  readonly shortcut?: string;
   readonly detail?: string;
   readonly previewImageUrl?: string;
   /**

@@ -127,6 +127,7 @@ test.each([30, 60])(
                 providerId: "hianime",
                 detail: "S01E12 · history",
               },
+              tier: 0,
               ranges: [],
             },
           ]}

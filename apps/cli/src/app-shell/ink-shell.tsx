@@ -3,7 +3,6 @@ import { join } from "node:path";
 
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { resolveHonestLoadingStageDetail } from "@/app-shell/loading-shell-model";
-import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
 import {
   buildPlaybackBootstrapPresentation,
   formatBootstrapInventorySummary,
@@ -59,7 +58,6 @@ import {
   tickNotificationQueue,
   type NotificationPriority,
 } from "./notification-queue";
-import { ListShell, type ListShellSubmitResult } from "./pickers/ListShell";
 import { plainModeEnabled } from "./plain-mode";
 import {
   buildPlaybackSubtitleLine,
@@ -79,7 +77,12 @@ import {
   useRootContentSession,
 } from "./root-content-state";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
-import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
+import {
+  buildRootStatusSummary,
+  headerStatusForRoot,
+  resolveShellRootStatus,
+  type SyncHealth,
+} from "./root-status-summary";
 import { InputField } from "./shell-frame";
 import { ShellFooter, TransientRowSlot } from "./shell-primitives";
 import {
@@ -777,17 +780,7 @@ export function AppRoot({ container }: { container: Container }) {
   const playbackIsActive = ACTIVE_PLAYBACK_STATUSES.some(
     (status) => status === state.playbackStatus,
   );
-  const rootStatus = playbackIsActive
-    ? state.playbackStatus
-    : state.playbackStatus === "loading"
-      ? "loading"
-      : state.searchState === "loading"
-        ? "searching"
-        : state.searchState === "error"
-          ? "issue"
-          : state.playbackStatus === "error"
-            ? "error"
-            : "ready";
+  const rootStatus = resolveShellRootStatus(state);
   const playbackSubtitle = buildPlaybackSubtitleLine(state);
   const playbackSubtitleStatus = buildPlaybackSubtitleStatusLine(state);
   const visiblePresenceBootLine = presenceProvider === "discord" ? presenceBootLine : null;
@@ -1242,9 +1235,9 @@ export function AppRoot({ container }: { container: Container }) {
         status={
           container.config.minimalMode && currentViewLabel === "browse"
             ? undefined
-            : rootStatusSummary.header.label
+            : headerStatusForRoot(rootStatus, rootStatusSummary.header).label
         }
-        statusColor={statusColor(rootStatusSummary.header.tone)}
+        statusColor={statusColor(headerStatusForRoot(rootStatus, rootStatusSummary.header).tone)}
         // Terminal size is noise at a comfortable size — only surface it when the
         // terminal is cramped enough to actually affect the layout (then it reads
         // as a useful "resize me" hint rather than permanent header clutter).
@@ -1907,59 +1900,4 @@ export function openStatsShell(container: Container): Promise<void> {
   return session.result;
 }
 
-export function openListShell<T>({
-  title,
-  subtitle,
-  options,
-  initialFilter,
-  initialSelectedIndex,
-  actionContext,
-}: {
-  title: string;
-  subtitle: string;
-  options: readonly ShellOption<T>[];
-  initialFilter?: string;
-  initialSelectedIndex?: number;
-  actionContext?: ListShellActionContext;
-}): Promise<T | null> {
-  let filterQuery = initialFilter ?? "";
-  let selectedIndex = initialSelectedIndex ?? 0;
-
-  const run = async (): Promise<T | null> => {
-    while (true) {
-      const session = mountRootContent<ListShellSubmitResult<T>>({
-        kind: "picker",
-        headerLabel: title,
-        renderContent: (finish) => (
-          <ListShell
-            title={title}
-            subtitle={subtitle}
-            options={options}
-            initialFilter={filterQuery}
-            initialSelectedIndex={selectedIndex}
-            actionContext={actionContext}
-            onSubmit={(value) => finish({ type: "selected", value })}
-            onCancel={() => finish({ type: "cancelled" })}
-            onAction={(action) => finish(action)}
-          />
-        ),
-        fallbackValue: { type: "cancelled" },
-      });
-
-      const result = await session.result;
-      if (result.type === "selected") return result.value;
-      if (result.type === "cancelled") return null;
-
-      const actionResult = await Promise.resolve(
-        actionContext?.onAction(result.action) ?? "unhandled",
-      );
-      if (actionResult === "quit") {
-        requestAppShutdown({ reason: "shell-quit", exitCode: 0 });
-      }
-      filterQuery = result.filterQuery;
-      selectedIndex = result.selectedIndex;
-    }
-  };
-
-  return run();
-}
+export { openListShell } from "@/app-shell/pickers/list-shell";

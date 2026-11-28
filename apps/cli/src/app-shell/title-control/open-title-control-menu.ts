@@ -215,6 +215,7 @@ export async function pickTitleControlShellAction(
         value: option.value,
         label: option.label,
         detail: option.detail,
+        shortcut: option.shortcut,
         disabled: option.disabled,
         destructive: option.destructive,
         previewImageUrl: option.previewImageUrl,
@@ -223,6 +224,9 @@ export async function pickTitleControlShellAction(
         container,
         taskLabel: "Choose starting point",
       }),
+      // Fixed actions stay compact even when progressive disclosure expands
+      // beyond the generic six-row auto threshold.
+      filter: "never",
     });
 
     if (!picked) return null;

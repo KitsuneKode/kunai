@@ -62,7 +62,7 @@ const NON_ANIMATION_INTERVAL_FILES: ReadonlyMap<string, string> = new Map([
     "confirm delay before submit, not a frame animation",
   ],
   [
-    "apps/cli/src/app-shell/pickers/ListShell.tsx",
+    "apps/cli/src/app-shell/pickers/list-shell.tsx",
     "confirm delay before submit, not a frame animation",
   ],
   ["apps/cli/src/app-shell/browse-shell.tsx", "action-feedback and search debounce timers"],

@@ -1,4 +1,5 @@
 import { useLineEditor } from "@/app-shell/line-editor";
+import { defaultPaletteSelectionIndex } from "@/app-shell/palette-ranking";
 import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
 import { useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
@@ -56,7 +57,13 @@ export function useShellInput({
     value: commandInput,
     onChange: (nextValue) => {
       setCommandInput(nextValue);
-      setHighlightedIndex(0);
+      setHighlightedIndex(
+        defaultPaletteSelectionIndex(
+          nextValue,
+          commands,
+          matchLocalTitles(titleEntries, nextValue),
+        ),
+      );
     },
   });
 

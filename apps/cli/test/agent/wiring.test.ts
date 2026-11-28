@@ -521,6 +521,182 @@ describe("agent wiring · shell v4 narrow layout", () => {
     });
   }, 45_000);
 
+  it("ranks a queued local-title prefix above fuzzy commands for /sm", async () => {
+    await withSession("wiring-palette-sm-title", { columns: 54, rows: 25 }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press("movie", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+      s.press("q");
+      await s.waitForBackend(
+        (i) => i.queue().some((row) => row.title_id === "tmdb:smoke-movie-1"),
+        "Smoke Movie queued",
+      );
+
+      s.press("/", "sm");
+      await s.waitForFrame(
+        (f) => f.includes("JUMP TO") && f.includes("Smoke Movie") && f.includes("/history"),
+        "ranked /sm palette",
+      );
+      const paletteFrame = s.frame().slice(s.frame().indexOf("JUMP TO"));
+      expect(paletteFrame.indexOf("Smoke Movie")).toBeGreaterThanOrEqual(0);
+      expect(paletteFrame.indexOf("/history")).toBeGreaterThanOrEqual(0);
+      expect(paletteFrame.indexOf("Smoke Movie")).toBeLessThan(paletteFrame.indexOf("/history"));
+
+      s.press(K.esc);
+      await s.waitForFrame((f) => !f.includes("JUMP TO"), "palette closed by Esc");
+      expect(s.inspect().queue()).toHaveLength(1);
+      expect(s.inspect().history()).toEqual([]);
+    });
+  }, 45_000);
+
+  it("offers catalog search for an unmatched query and Enter searches the current TMDB lane", async () => {
+    await withSession("wiring-palette-search-fallback", { columns: 120, rows: 32 }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press("/", "frieren");
+      await s.waitForFrame(
+        (f) => f.includes('Search catalog for "frieren"'),
+        "catalog-search fallback row",
+      );
+
+      s.press(K.esc);
+      await s.waitForFrame(
+        (f) => !f.includes('Search catalog for "frieren"'),
+        "fallback palette closed by Esc",
+      );
+      expect(s.sessionState().searchState).toBe("idle");
+
+      // `/` reopens the surviving draft; typing it again would duplicate it.
+      s.press("/", K.enter);
+      await s.waitForFrame(
+        (f) => f.includes("Frieren: Beyond Journey's End") && f.includes("1 result"),
+        "frieren catalog results",
+      );
+      expect(s.sessionState().searchQuery).toBe("frieren");
+      expect(s.sessionState().searchState).toBe("ready");
+    });
+  }, 45_000);
+
+  it("uses the same catalog-search fallback in the anime lane", async () => {
+    await withSession(
+      "wiring-palette-search-fallback-anime",
+      { columns: 120, rows: 32 },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press(K.tab);
+        await s.waitForFrame((f) => f.includes("anime"), "anime lane");
+        s.press("/", "frieren", K.enter);
+        await s.waitForFrame(
+          (f) => f.includes("Frieren: Beyond Journey's End") && f.includes("1 result"),
+          "anime frieren catalog results",
+        );
+        expect(s.sessionState().mode).toBe("anime");
+        expect(s.sessionState().searchQuery).toBe("frieren");
+      },
+    );
+  }, 45_000);
+
+  it("keeps the catalog-search fallback usable in plain mode", async () => {
+    await withSession(
+      "wiring-palette-search-fallback-plain",
+      { columns: 54, rows: 25, extraEnv: { KUNAI_PLAIN: "1" } },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("/", "frieren", K.enter);
+        await s.waitForFrame(
+          (f) => f.includes("Frieren: Beyond Journey's End") && f.includes("[selected]"),
+          "plain-mode frieren catalog results",
+        );
+        expect(s.sessionState().searchQuery).toBe("frieren");
+      },
+    );
+  }, 45_000);
+
+  it("keeps Where to start compact and escapable at 120x32", async () => {
+    await withSession(
+      "wiring-start-menu-compact-wide",
+      {
+        columns: 120,
+        rows: 32,
+        mpv: "fake",
+        beforeMount({ container }) {
+          container.historyRepository.upsertProgress({
+            title: { id: "tmdb:smoke-series-1", kind: "series", title: "Smoke Series" },
+            episode: { season: 1, episode: 1 },
+            positionSeconds: 1400,
+            durationSeconds: 1400,
+            completed: true,
+            providerId: "videasy",
+            updatedAt: "2026-11-20T10:00:00.000Z",
+          });
+        },
+      },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("series", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Series"), "series fixture results");
+        s.press("m");
+        await s.waitForFrame((f) => f.includes("Where to start?"), "starting-point dialog");
+        const frame = s.frame();
+        expect(frame).not.toContain("Type to narrow this list");
+        expect(frame).not.toContain("Filter");
+
+        s.press(K.down);
+        await s.waitForFrame((f) => f.includes("▌ ☰ Pick"), "arrow moves compact selection");
+        s.press(K.esc);
+        await s.waitForFrame(
+          (f) => f.includes("Search title") && !f.includes("Where to start?"),
+          "Esc returns to browse without playback",
+        );
+        expect(
+          s
+            .inspect()
+            .history()
+            .filter((row) => row.title_id === "tmdb:smoke-series-1"),
+        ).toHaveLength(1);
+      },
+    );
+  }, 45_000);
+
+  it("keeps Where to start compact and number-keyed at 40x20", async () => {
+    await withSession(
+      "wiring-start-menu-compact-narrow",
+      {
+        columns: 40,
+        rows: 20,
+        mpv: "fake",
+        beforeMount({ container }) {
+          container.historyRepository.upsertProgress({
+            title: { id: "tmdb:smoke-series-1", kind: "series", title: "Smoke Series" },
+            episode: { season: 1, episode: 1 },
+            positionSeconds: 1400,
+            durationSeconds: 1400,
+            completed: true,
+            providerId: "videasy",
+            updatedAt: "2026-11-20T10:00:00.000Z",
+          });
+        },
+      },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("series", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Series"), "series fixture results");
+        s.press("m");
+        await s.waitForFrame((f) => f.includes("Where to start?"), "starting-point dialog");
+        expect(s.frame()).not.toContain("Type to narrow this list");
+        expect(s.frame()).not.toContain("Filter");
+
+        s.press("2");
+        // The fixture has no season metadata, so the activated Pick flow
+        // cancels cleanly; the observable proof is that the key did not drop
+        // into the dialog as text — it ran row 2 and closed the menu.
+        await s.waitForFrame(
+          (f) => f.includes("Smoke Series") && !f.includes("Where to start?"),
+          "number shortcut activates Pick season/episode",
+        );
+      },
+    );
+  }, 45_000);
+
   it("keeps the 40-column playback header intact and pins stop plus commands", async () => {
     await withSession(
       "wiring-playback-narrow",
@@ -1014,6 +1190,135 @@ describe("agent wiring · setup owns the machine verdict", () => {
         s.press(K.esc);
         await s.waitForFrame((f) => f.includes("Search title"), "back in browse");
         await s.waitForFrame((f) => f.includes(strip), "strip returns outside setup");
+      },
+    );
+  }, 45_000);
+});
+
+describe("agent wiring · failover banner and startup failure", () => {
+  const viewports = [
+    { columns: 120, rows: 32, plain: false },
+    { columns: 54, rows: 25, plain: false },
+    { columns: 40, rows: 20, plain: false },
+    { columns: 80, rows: 24, plain: true },
+  ];
+
+  for (const viewport of viewports) {
+    const label = `${viewport.columns}x${viewport.rows}${viewport.plain ? " plain" : ""}`;
+
+    it(`startup failure stays on Playback issue at ${label}`, async () => {
+      await withSession(
+        `wiring-startup-failure-${viewport.columns}x${viewport.rows}${viewport.plain ? "-plain" : ""}`,
+        {
+          mpv: "fake",
+          fakeMpvMode: "fail-pre-loaded",
+          columns: viewport.columns,
+          rows: viewport.rows,
+          extraEnv: viewport.plain ? { KUNAI_PLAIN: "1" } : undefined,
+        },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+          s.press("smoke", K.enter);
+          await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+          s.press(K.enter);
+          await s.waitForFrame(
+            (f) =>
+              f.includes("Playback issue") &&
+              f.includes("not marked watched") &&
+              f.includes("[r] recover") &&
+              (viewport.plain ? f.includes("Status: issue") : f.includes("● issue")),
+            "playback issue panel",
+            45_000,
+          );
+          const frame = s.frame();
+          expect(frame).not.toContain("Tracks");
+          expect(frame).not.toContain("● ready");
+        },
+      );
+    }, 70_000);
+
+    it(`resolving does not claim ready before launch at ${label}`, async () => {
+      await withSession(
+        `wiring-resolving-${viewport.columns}x${viewport.rows}${viewport.plain ? "-plain" : ""}`,
+        {
+          mpv: "fake",
+          fakeMpvMode: "hold",
+          columns: viewport.columns,
+          rows: viewport.rows,
+          extraEnv: viewport.plain ? { KUNAI_PLAIN: "1" } : undefined,
+        },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+          s.press("smoke", K.enter);
+          await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+          s.press(K.enter);
+          await s.waitForFrame(
+            (f) => f.includes("Resolving") && !f.includes("● ready") && !f.includes("Now Playing"),
+            "resolving header",
+            30_000,
+          );
+          const resolvingFrames = s.frames().filter((frame) => frame.includes("Resolving"));
+          expect(resolvingFrames.length).toBeGreaterThan(0);
+          for (const frame of resolvingFrames) {
+            expect(frame).not.toContain("● ready");
+          }
+        },
+      );
+    }, 45_000);
+  }
+
+  it("mid-stream failover banner names both providers and the preserved timestamp", async () => {
+    let showFailover: (() => void) | undefined;
+    let reportPlayingAgain: (() => void) | undefined;
+    await withSession(
+      "wiring-midstream-failover",
+      {
+        mpv: "fake",
+        fakeMpvMode: "hold",
+        columns: 120,
+        rows: 32,
+        beforeMount({ container }) {
+          showFailover = () => {
+            container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FAILOVER",
+              failover: {
+                phase: "mid-stream",
+                fromLabel: "VidKing",
+                toLabel: "Rivestream",
+                preservedSeconds: 14 * 60 + 22,
+                tone: "warn",
+              },
+            });
+          };
+          reportPlayingAgain = () => {
+            container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
+          };
+        },
+      },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("Now Playing"), "playback live", 30_000);
+        showFailover?.();
+        await s.waitForFrame(
+          (f) => f.includes("Switching from VidKing to Rivestream") && f.includes("14:22"),
+          "failover banner",
+        );
+        expect(s.frame()).toContain("Holding position at 14:22");
+        expect(s.sessionState().playbackFailover?.tone).toBe("warn");
+        expect(s.frame()).not.toContain("sourceId");
+        // Published while this session was already playing, so that dispatch
+        // leaves the banner up. The next playing status is what the player
+        // writes when the new source reports playback.
+        expect(s.sessionState().playbackFailover?.toLabel).toBe("Rivestream");
+        reportPlayingAgain?.();
+        await s.waitForFrame(
+          (f) => !f.includes("Switching from VidKing to Rivestream"),
+          "banner cleared after the player reports playing",
+        );
+        expect(s.sessionState().playbackFailover).toBeNull();
       },
     );
   }, 45_000);

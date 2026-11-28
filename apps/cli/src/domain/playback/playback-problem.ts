@@ -1,4 +1,4 @@
-import type { PlaybackFailureClass } from "@/infra/player/playback-failure-classifier";
+import type { PlaybackFailureClass } from "@/domain/playback/playback-failure-class";
 import { classifyProviderFailure, isOfflineNetworkFailure } from "@kunai/core";
 import { detectGeoBlockedProviderResponse } from "@kunai/relay";
 import type { ProviderFailure } from "@kunai/types";
@@ -330,6 +330,24 @@ export function buildPlayerFailureProblem(failureClass: PlaybackFailureClass): P
         recommendedAction: "diagnostics",
         secondaryActions: ["refresh", "relaunch"],
       };
+    case "video-not-decoding":
+      return {
+        stage: "mpv",
+        severity: "recoverable",
+        cause: "video-not-decoding",
+        userMessage: "This stream's video does not decode here.",
+        recommendedAction: "pick-stream",
+        secondaryActions: ["try-next-provider", "diagnostics"],
+      };
+    case "video-lost":
+      return {
+        stage: "mpv",
+        severity: "recoverable",
+        cause: "video-lost",
+        userMessage: "The video stopped decoding at this position.",
+        recommendedAction: "refresh",
+        secondaryActions: ["pick-stream", "diagnostics"],
+      };
     case "none":
       return {
         stage: "mpv",
@@ -338,15 +356,6 @@ export function buildPlayerFailureProblem(failureClass: PlaybackFailureClass): P
         userMessage: "No playback problem detected.",
         recommendedAction: "wait",
         secondaryActions: [],
-      };
-    default:
-      return {
-        stage: "mpv",
-        severity: "recoverable",
-        cause: "unknown",
-        userMessage: "Playback ended for an unclear reason.",
-        recommendedAction: "diagnostics",
-        secondaryActions: ["refresh", "relaunch"],
       };
   }
 }

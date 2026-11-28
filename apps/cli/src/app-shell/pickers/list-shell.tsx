@@ -1,12 +1,29 @@
-import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
-import {
-  getPickerChromeRows,
-  getPickerLayout,
-  getPickerListMaxVisible,
-} from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
-import { plainModeEnabled, selectionPrefix } from "@/app-shell/plain-mode";
-import { suppressPosterWhileNavigating } from "@/app-shell/poster-types";
+import { defaultPaletteSelectionIndex } from "@/app-shell/palette-ranking";
+import {
+  resolveCompactListShortcut,
+  shouldShowListFilter,
+} from "@/app-shell/pickers/list-shell-filter";
+import type {
+  ListShellActionContext,
+  ListShellFilterPreference,
+  ShellOption,
+} from "@/app-shell/pickers/list-shell-types";
+import { requestAppShutdown } from "@/app/session/shutdown-request";
+import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
+import { Box, Text, useInput } from "ink";
+import { useEffect, useMemo, useState } from "react";
+
+import { resolveEscStack, type EscLayer } from "../esc-stack";
+import { useSettledValue } from "../hooks/use-settled-value";
+import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "../layout-policy";
+import { plainModeEnabled, selectionPrefix } from "../plain-mode";
+import { suppressPosterWhileNavigating } from "../poster-types";
+import { ConfirmStrip } from "../primitives/ConfirmStrip";
+import { confirmStripFooterActions, confirmStripOwnsInput } from "../primitives/ConfirmStrip.model";
+import { SakuraPetal } from "../primitives/SakuraPetal";
+import { useConfirmStripController } from "../primitives/use-confirm-strip";
+import { mountRootContent } from "../root-content-state";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -15,33 +32,17 @@ import {
   paletteSelectableCount,
   resolveHighlightedPaletteRow,
   shouldHideCompanionForCommandPalette,
-} from "@/app-shell/shell-command-model";
-import { CommandPalette } from "@/app-shell/shell-command-ui";
-import { InputField } from "@/app-shell/shell-frame";
-import { clearShellScreenArtifacts } from "@/app-shell/shell-screen-clear";
-import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "@/app-shell/shell-text";
-import { palette } from "@/app-shell/shell-theme";
-import {
-  toShellAction,
-  type FooterAction,
-  type ShellAction,
-  type ShellFooterMode,
-} from "@/app-shell/types";
-import { usePosterPreview } from "@/app-shell/use-poster-preview";
-import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
-import { requestAppShutdown } from "@/app/session/shutdown-request";
-import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
-import { Box, Text, useInput } from "ink";
-import React, { useEffect, useMemo, useState } from "react";
-
-import { resolveEscStack, type EscLayer } from "../esc-stack";
-import { ConfirmStrip } from "../primitives/ConfirmStrip";
-import { confirmStripFooterActions, confirmStripOwnsInput } from "../primitives/ConfirmStrip.model";
-import { SakuraPetal } from "../primitives/SakuraPetal";
-import { useConfirmStripController } from "../primitives/use-confirm-strip";
+} from "../shell-command-model";
+import { CommandPalette } from "../shell-command-ui";
+import { InputField } from "../shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter } from "../shell-primitives";
+import { clearShellScreenArtifacts } from "../shell-screen-clear";
+import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "../shell-text";
+import { palette } from "../shell-theme";
 import { PosterOutput } from "../SixelPosterPane";
-import type { ListShellActionContext, ShellOption } from "./list-shell-types";
+import { toShellAction, type FooterAction, type ShellAction, type ShellFooterMode } from "../types";
+import { usePosterPreview } from "../use-poster-preview";
+import { useDebouncedViewportPolicy } from "../use-viewport-policy";
 
 const LIST_SHELL_FOOTER_ACTIONS: readonly FooterAction[] = [
   { key: "/", label: "commands", action: "command-mode" },
@@ -84,6 +85,7 @@ export function ListShell<T>({
   initialFilter,
   initialSelectedIndex,
   actionContext,
+  filter = "auto",
   onSubmit,
   onCancel,
   onAction,
@@ -94,6 +96,7 @@ export function ListShell<T>({
   initialFilter?: string;
   initialSelectedIndex?: number;
   actionContext?: ListShellActionContext;
+  filter?: ListShellFilterPreference;
   onSubmit: (value: T) => void;
   onCancel: () => void;
   onAction?: (result: ListShellActionResult) => void;
@@ -111,7 +114,8 @@ export function ListShell<T>({
     [titleEntries, commandInput],
   );
   const viewport = useDebouncedViewportPolicy("picker");
-  const normalizedFilter = filterQuery.trim().toLowerCase();
+  const filterVisible = shouldShowListFilter(filter, options.length);
+  const normalizedFilter = filterVisible ? filterQuery.trim().toLowerCase() : "";
   const filteredOptions = useMemo(() => {
     return options.filter((option) => {
       if (normalizedFilter.length === 0) return true;
@@ -190,7 +194,8 @@ export function ListShell<T>({
   const footerTask =
     normalizedFilter.length > 0
       ? "Refine the filter or confirm the highlighted match"
-      : (actionContext?.taskLabel ?? "Filter this list and confirm a selection");
+      : (actionContext?.taskLabel ??
+        (filterVisible ? "Filter this list and confirm a selection" : "Choose an action"));
   // List/picker shells use the minimal footer: the surface is a focused filter +
   // select, and the command palette ("/") plus Esc-back are the only chrome.
   const effectiveFooterMode: ShellFooterMode = "minimal";
@@ -218,7 +223,13 @@ export function ListShell<T>({
     value: commandInput,
     onChange: (nextValue) => {
       setCommandInput(nextValue);
-      setHighlightedCommandIndex(0);
+      setHighlightedCommandIndex(
+        defaultPaletteSelectionIndex(
+          nextValue,
+          actionContext?.commands ?? [],
+          matchLocalTitles(titleEntries, nextValue),
+        ),
+      );
     },
   });
 
@@ -334,6 +345,17 @@ export function ListShell<T>({
       return;
     }
 
+    if (!filterVisible && /^[\p{L}\p{N}]$/u.test(input) && !key.ctrl && !key.meta) {
+      const shortcutIndex = resolveCompactListShortcut(input, filteredOptions);
+      const shortcutOption = shortcutIndex === null ? undefined : filteredOptions[shortcutIndex];
+      if (shortcutIndex !== null && shortcutOption && !confirmed) {
+        setIndex(shortcutIndex);
+        setConfirmed(true);
+        setTimeout(() => onSubmit(shortcutOption.value), 150);
+      }
+      return;
+    }
+
     if (key.return) {
       const selected = filteredOptions[index];
       if (selected && !confirmed) {
@@ -371,15 +393,17 @@ export function ListShell<T>({
           </Text>
           <Text color={palette.muted}>{confirmed ? selectedLabel : subtitle}</Text>
         </Box>
-        <InputField
-          label="Filter"
-          value={filterQuery}
-          onChange={updateFilterQuery}
-          placeholder="Type to narrow this list"
-          focus={!commandMode}
-          hint={actionContext ? "Type to filter · / opens commands" : undefined}
-          onRedraw={clearShellScreenArtifacts}
-        />
+        {filterVisible ? (
+          <InputField
+            label="Filter"
+            value={filterQuery}
+            onChange={updateFilterQuery}
+            placeholder="Type to narrow this list"
+            focus={!commandMode}
+            hint={actionContext ? "Type to filter · / opens commands" : undefined}
+            onRedraw={clearShellScreenArtifacts}
+          />
+        ) : null}
         {tooSmall ? (
           <ResizeBlocker
             columns={viewport.columns}
@@ -435,8 +459,15 @@ export function ListShell<T>({
                         : option.destructive
                           ? palette.warnDim
                           : palette.dim;
-                  const secondary = option.detail
-                    ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 4))}`
+                  const shortcutHint = filterVisible
+                    ? ""
+                    : (option.shortcut ??
+                      `${filteredOptions.indexOf(option) + 1 <= 9 ? filteredOptions.indexOf(option) + 1 : ""}`);
+                  const detailWithShortcut = [option.detail, shortcutHint]
+                    .filter(Boolean)
+                    .join("  ");
+                  const secondary = detailWithShortcut
+                    ? `  ${truncateLine(detailWithShortcut, Math.max(12, rowWidth - option.label.length - 4))}`
                     : "";
                   const rowText = truncateLine(`${option.label}${secondary}`, rowWidth - 2);
                   const highlighted = selected && !option.disabled;
@@ -538,4 +569,64 @@ export function ListShell<T>({
       />
     </Box>
   );
+}
+
+export function openListShell<T>({
+  title,
+  subtitle,
+  options,
+  initialFilter,
+  initialSelectedIndex,
+  actionContext,
+  filter = "auto",
+}: {
+  title: string;
+  subtitle: string;
+  options: readonly ShellOption<T>[];
+  initialFilter?: string;
+  initialSelectedIndex?: number;
+  actionContext?: ListShellActionContext;
+  filter?: ListShellFilterPreference;
+}): Promise<T | null> {
+  let filterQuery = initialFilter ?? "";
+  let selectedIndex = initialSelectedIndex ?? 0;
+
+  const run = async (): Promise<T | null> => {
+    while (true) {
+      const session = mountRootContent<ListShellSubmitResult<T>>({
+        kind: "picker",
+        headerLabel: title,
+        renderContent: (finish) => (
+          <ListShell
+            title={title}
+            subtitle={subtitle}
+            options={options}
+            initialFilter={filterQuery}
+            initialSelectedIndex={selectedIndex}
+            actionContext={actionContext}
+            filter={filter}
+            onSubmit={(value) => finish({ type: "selected", value })}
+            onCancel={() => finish({ type: "cancelled" })}
+            onAction={(action) => finish(action)}
+          />
+        ),
+        fallbackValue: { type: "cancelled" },
+      });
+
+      const result = await session.result;
+      if (result.type === "selected") return result.value;
+      if (result.type === "cancelled") return null;
+
+      const actionResult = await Promise.resolve(
+        actionContext?.onAction(result.action) ?? "unhandled",
+      );
+      if (actionResult === "quit") {
+        requestAppShutdown({ reason: "shell-quit", exitCode: 0 });
+      }
+      filterQuery = result.filterQuery;
+      selectedIndex = result.selectedIndex;
+    }
+  };
+
+  return run();
 }

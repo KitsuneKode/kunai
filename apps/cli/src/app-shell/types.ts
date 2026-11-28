@@ -1,5 +1,7 @@
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
+import type { PlaybackFailoverNotice } from "@/domain/playback/playback-failover-notice";
+import type { PlaybackFailureClass } from "@/domain/playback/playback-failure-class";
 import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 import type { ReleaseFilter, WatchFilter } from "@/domain/search/SearchIntent";
@@ -276,6 +278,10 @@ export type LoadingShellState = {
    * never be pattern-matched to infer failure.
    */
   problem?: PlaybackProblem | null;
+  /** Player failure class. Authoritative for recovery copy; never inferred from prose. */
+  failureClass?: PlaybackFailureClass | null;
+  /** Structured from→to switch. The shell renders it and does not rebuild it. */
+  failover?: PlaybackFailoverNotice | null;
   stopHint?: string;
   controlHint?: string;
   /** Inventory + autoplay/autoskip facts for the playing context strip. */

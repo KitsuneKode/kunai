@@ -59,6 +59,7 @@ export type TitleControlMenuOption<T> = {
   readonly id?: string;
   readonly label: string;
   readonly detail?: string;
+  readonly shortcut?: string;
   readonly disabled?: boolean;
   /** Carried per-option because the preview pane reads it off the selected row. */
   readonly previewImageUrl?: string;
@@ -111,6 +112,7 @@ export function titleControlMenuOptions(
         label: action.enabled && action.icon ? `${action.icon} ${action.label}` : action.label,
         detail: action.enabled ? action.detail : (action.reason ?? "Unavailable"),
         disabled: !action.enabled,
+        shortcut: action.shortcut,
         ...(action.destructive ? { destructive: true } : {}),
       });
     }

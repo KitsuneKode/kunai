@@ -2,24 +2,14 @@ import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { buildPickerModel, movePickerModelSelection } from "@/domain/session/picker-model";
 
 import { COMMANDS, type AppCommandId, type ResolvedAppCommand } from "./commands";
+import {
+  CONTEXT_COMMAND_IDS,
+  buildPaletteRows,
+  rankPaletteCommands,
+  type PaletteRankedRow,
+} from "./palette-ranking";
 
-/** Commands that appear under the "Context" group header in the palette. */
-export const CONTEXT_COMMAND_IDS = new Set<AppCommandId>([
-  "toggle-autoplay",
-  "replay",
-  "recover",
-  "fallback",
-  "source",
-  "quality",
-  "audio",
-  "subtitle",
-  "memory",
-  "pick-episode",
-  "next",
-  "previous",
-  "next-season",
-  "download",
-]);
+export { CONTEXT_COMMAND_IDS } from "./palette-ranking";
 
 export const COMMAND_GROUP_LABELS = {
   context: "Context",
@@ -48,9 +38,7 @@ export function getHighlightedCommand(
   return commands.find((command) => command.id === model.selectedOption?.value) ?? null;
 }
 
-export type PaletteRowSelection =
-  | { readonly kind: "command"; readonly command: ResolvedAppCommand }
-  | { readonly kind: "title"; readonly match: LocalTitleMatch };
+export type PaletteRowSelection = PaletteRankedRow;
 
 /**
  * Total navigable palette rows: visible commands [0, C) then title matches
@@ -60,8 +48,9 @@ export function paletteSelectableCount(
   input: string,
   commands: readonly ResolvedAppCommand[],
   titleMatches: readonly LocalTitleMatch[],
+  options: { readonly catalogSearch?: boolean } = {},
 ): number {
-  return buildCommandPickerModel(input, commands, 0).options.length + titleMatches.length;
+  return buildPaletteRows(input, commands, titleMatches, options).length;
 }
 
 /** Wrap-around selection over the union of command + title rows. */
@@ -81,14 +70,10 @@ export function resolveHighlightedPaletteRow(
   commands: readonly ResolvedAppCommand[],
   titleMatches: readonly LocalTitleMatch[],
   highlightedIndex: number,
+  options: { readonly catalogSearch?: boolean } = {},
 ): PaletteRowSelection | null {
-  const model = buildCommandPickerModel(input, commands, highlightedIndex);
-  if (highlightedIndex < model.options.length) {
-    const command = commands.find((candidate) => candidate.id === model.selectedOption?.value);
-    return command ? { kind: "command", command } : null;
-  }
-  const match = titleMatches[highlightedIndex - model.options.length];
-  return match ? { kind: "title", match } : null;
+  const rows = buildPaletteRows(input, commands, titleMatches, options);
+  return rows[highlightedIndex] ?? null;
 }
 
 export function getCommandAutocompleteTarget(
@@ -153,22 +138,11 @@ export function buildCommandPickerModel(
   // rendering an empty palette.
   const runnable = commands.filter((command) => command.enabled);
   const visible = showGrouped && runnable.length > 0 ? runnable : commands;
-  const query = input.trim().replace(/^\//, "").toLowerCase();
-  // Once an alias/name prefix identifies a command, incidental fuzzy matches
-  // deep in descriptions should not keep the entire menu on screen.
-  const prefixMatches = query
-    ? visible.filter((command) =>
-        [command.id, command.label, ...command.aliases].some((name) =>
-          name
-            .toLowerCase()
-            .split(/[\s_-]+/)
-            .some((word) => word.startsWith(query)),
-        ),
-      )
-    : [];
-  const matching = prefixMatches.length > 0 ? prefixMatches : visible;
+  const matching = rankPaletteCommands(input, visible);
   return buildPickerModel<AppCommandId>({
-    query: input,
+    // Commands are already filtered and tiered. The generic picker must not
+    // re-score them, or deep description fuzz can reorder a stable tier.
+    query: "",
     selectedIndex: highlightedIndex,
     groupOrder: showGrouped ? ["context", "global"] : undefined,
     groupLabels: COMMAND_GROUP_LABELS,

@@ -171,6 +171,8 @@ export function ErrorShell({
   onResolve,
   onRetry,
   onProviders,
+  onOpenTracks,
+  recoveryAffordance = false,
 }: {
   message: string;
   scenario?: ErrorScenario;
@@ -181,6 +183,8 @@ export function ErrorShell({
   onResolve: () => void;
   onRetry?: () => void;
   onProviders?: () => void;
+  onOpenTracks?: () => void;
+  recoveryAffordance?: boolean;
 }) {
   // Memoized on its inputs, not recomputed per render: it is a dependency of
   // the row model below, and a fresh object each render would defeat that memo.
@@ -196,6 +200,7 @@ export function ErrorShell({
     }
     if (input.toLowerCase() === "r" && onRetry) onRetry();
     if (input.toLowerCase() === "p" && onProviders) onProviders();
+    if (input.toLowerCase() === "o" && onOpenTracks) onOpenTracks();
   });
 
   // Width comes from the terminal alone — never from the petals, or the border
@@ -214,8 +219,9 @@ export function ErrorShell({
         debugExcerpt,
         canRetry: Boolean(onRetry),
         textWidth: width - TEXT_COLUMN,
+        recoveryAffordance,
       }),
-    [message, scenario, nextStep, waterfall, debugExcerpt, onRetry, width],
+    [message, scenario, nextStep, waterfall, debugExcerpt, onRetry, recoveryAffordance, width],
   );
 
   const plain = plainModeEnabled();
