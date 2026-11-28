@@ -1,4 +1,4 @@
-import { measureColumns, truncateLine } from "../../shell-text";
+import { measureColumns, sanitizeTerminalText, truncateLine } from "../../shell-text";
 
 export type FittedSettingsRowText = {
   readonly label: string;
@@ -14,7 +14,7 @@ export function fitSettingsRowText(input: {
   readonly value?: string;
   readonly plain: boolean;
 }): FittedSettingsRowText {
-  const value = input.value ?? "";
+  const value = sanitizeTerminalText(input.value ?? "");
   const separator = value ? (input.plain ? ": " : " · ") : "";
   const prefixWidth = measureColumns(input.prefix);
   const available = Math.max(0, input.width - prefixWidth);
