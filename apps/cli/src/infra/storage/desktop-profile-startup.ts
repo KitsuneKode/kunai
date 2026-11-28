@@ -1,14 +1,18 @@
 /**
- * True only for the global version fast path. install.ps1 smoke-runs a fresh
- * versioned payload as `--version` before install.json exists; version output
- * never writes storage, so it must not demand profile or install evidence.
+ * True only for a bare `kunai --version` / `kunai -v`. install.ps1 smoke-runs a
+ * fresh versioned payload exactly that way before install.json exists, and
+ * version output never writes storage, so it must not demand profile or
+ * install evidence. Any other argument keeps inference: in `kunai -S -v` the
+ * `-v` is search text and the shell opens, so skipping would run a profile
+ * payload against the default profile.
  */
 export function versionRequestSkipsWindowsProfileInference(
   argv: readonly string[],
   maintenanceCommands: ReadonlySet<string>,
 ): boolean {
-  const command = argv[0] ?? "";
-  return !maintenanceCommands.has(command) && (argv.includes("--version") || argv.includes("-v"));
+  const only = argv.length === 1 ? argv[0] : undefined;
+  if (only === undefined || maintenanceCommands.has(only)) return false;
+  return only === "--version" || only === "-v";
 }
 
 type StorageModule = typeof import("@kunai/storage");

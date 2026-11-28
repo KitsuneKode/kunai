@@ -24,7 +24,7 @@ function storageProbe(
 }
 
 describe("versionRequestSkipsWindowsProfileInference", () => {
-  for (const argv of [["--version"], ["-v"], ["-S", "Dune", "--version"]]) {
+  for (const argv of [["--version"], ["-v"]]) {
     test(`skips inference for the global version fast path ${JSON.stringify(argv)}`, () => {
       expect(versionRequestSkipsWindowsProfileInference(argv, MAINTENANCE)).toBe(true);
     });
@@ -36,6 +36,11 @@ describe("versionRequestSkipsWindowsProfileInference", () => {
     ["rollback", "-v"],
     ["plain-launcher-argument"],
     [],
+    // `-v` here is the search text, not the version flag: the app opens, so the
+    // profile must still be inferred or it would run on the default profile.
+    ["-S", "-v"],
+    ["-S", "Dune", "--version"],
+    ["--version", "--debug"],
   ]) {
     test(`keeps inference for non-version invocation ${JSON.stringify(argv)}`, () => {
       expect(versionRequestSkipsWindowsProfileInference(argv, MAINTENANCE)).toBe(false);
